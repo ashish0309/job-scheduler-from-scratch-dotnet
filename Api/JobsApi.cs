@@ -6,11 +6,6 @@ namespace JobSchedulerPrototype.Api;
 
 public static class JobsApi
 {
-    private static readonly HashSet<string> SupportedJobTypes = new(StringComparer.Ordinal)
-    {
-        "send-welcome-email"
-    };
-
     public static RouteGroupBuilder MapJobsApi(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/jobs");
@@ -24,18 +19,19 @@ public static class JobsApi
 
     private static Results<Accepted<JobResponse>, BadRequest<JobValidationError>> EnqueueJob(
         EnqueueJobRequest request,
-        IJobStore jobs)
+        IJobStore jobs,
+        IJobDefinitionRegistry definitions)
     {
-        var validationError = Validate(request);
-        if (validationError is not null)
+        var validationResult = Validate(request, definitions);
+        if (!validationResult.IsValid)
         {
-            return TypedResults.BadRequest(validationError);
+            return TypedResults.BadRequest(new JobValidationError(validationResult.ErrorMessage));
         }
 
         var job = JobRecord.Enqueue(
             Guid.NewGuid(),
             request.Type,
-            request.Payload.Clone(),
+            validationResult.Payload,
             DateTimeOffset.UtcNow);
 
         jobs.Add(job);
@@ -64,24 +60,28 @@ public static class JobsApi
             : TypedResults.Ok(ToResponse(job));
     }
 
-    private static JobValidationError? Validate(EnqueueJobRequest request)
+    private static EnqueueJobValidationResult Validate(
+        EnqueueJobRequest request,
+        IJobDefinitionRegistry definitions)
     {
         if (string.IsNullOrWhiteSpace(request.Type))
         {
-            return new JobValidationError("Job type is required.");
+            return EnqueueJobValidationResult.Invalid("Job type is required.");
         }
 
-        if (!SupportedJobTypes.Contains(request.Type))
+        var definition = definitions.Find(request.Type);
+        if (definition is null)
         {
-            return new JobValidationError("Unsupported job type.");
+            return EnqueueJobValidationResult.Invalid("Unsupported job type.");
         }
 
-        if (request.Payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        var payloadValidation = definition.ValidatePayload(request.Payload);
+        if (!payloadValidation.IsValid)
         {
-            return new JobValidationError("Job payload is required.");
+            return EnqueueJobValidationResult.Invalid(payloadValidation.ErrorMessage ?? "Job payload is invalid.");
         }
 
-        return null;
+        return EnqueueJobValidationResult.Valid(payloadValidation.Payload);
     }
 
     private static JobResponse ToResponse(JobRecord job)
@@ -115,3 +115,19 @@ public sealed record JobResponse(
     string StatusUrl);
 
 public sealed record JobValidationError(string Message);
+
+internal sealed record EnqueueJobValidationResult(
+    bool IsValid,
+    JsonElement Payload,
+    string ErrorMessage)
+{
+    public static EnqueueJobValidationResult Valid(JsonElement payload)
+    {
+        return new EnqueueJobValidationResult(true, payload.Clone(), ErrorMessage: string.Empty);
+    }
+
+    public static EnqueueJobValidationResult Invalid(string errorMessage)
+    {
+        return new EnqueueJobValidationResult(false, default, errorMessage);
+    }
+}

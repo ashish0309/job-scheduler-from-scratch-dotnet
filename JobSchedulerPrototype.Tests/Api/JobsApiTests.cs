@@ -55,7 +55,8 @@ public sealed class JobsApiTests
             type = "send-welcome-email",
             payload = new
             {
-                userId = "user_123"
+                userId = "user_123",
+                email = "person@example.com"
             }
         });
         var postedJob = await postResponse.Content.ReadFromJsonAsync<JobResponse>();
@@ -89,7 +90,8 @@ public sealed class JobsApiTests
             type = "send-welcome-email",
             payload = new
             {
-                userId = "user_123"
+                userId = "user_123",
+                email = "person@example.com"
             }
         });
         var postedJob = await postResponse.Content.ReadFromJsonAsync<JobResponse>();
@@ -194,6 +196,12 @@ public sealed class JobsApiTests
         var body = await response.Content.ReadFromJsonAsync<JobValidationError>();
         Assert.NotNull(body);
         Assert.Equal(expectedMessage, body.Message);
+
+        var listResponse = await client.GetAsync("/api/jobs");
+        listResponse.EnsureSuccessStatusCode();
+        var jobs = await listResponse.Content.ReadFromJsonAsync<JobResponse[]>();
+        Assert.NotNull(jobs);
+        Assert.Empty(jobs);
     }
 
     public static TheoryData<object, string> InvalidRequests()
@@ -219,6 +227,28 @@ public sealed class JobsApiTests
             {
                 new
                 {
+                    type = "send-welcome-email",
+                    payload = new
+                    {
+                        email = "person@example.com"
+                    }
+                },
+                "User ID is required."
+            },
+            {
+                new
+                {
+                    type = "send-welcome-email",
+                    payload = new
+                    {
+                        userId = "user_123"
+                    }
+                },
+                "Email is required."
+            },
+            {
+                new
+                {
                     type = "",
                     payload = new { }
                 },
@@ -229,7 +259,7 @@ public sealed class JobsApiTests
 
     private static JsonElement Payload()
     {
-        using var document = JsonDocument.Parse("""{"userId":"user_123"}""");
+        using var document = JsonDocument.Parse("""{"userId":"user_123","email":"person@example.com"}""");
         return document.RootElement.Clone();
     }
 

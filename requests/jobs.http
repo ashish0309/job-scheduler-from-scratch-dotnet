@@ -51,6 +51,19 @@ Content-Type: application/json
   }
 }
 
+### Enqueue a job that will fail during execution
+POST {{baseUrl}}/api/jobs
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "user_fail",
+    "email": "failure@example.com",
+    "shouldFail": true
+  }
+}
+
 ### List jobs
 GET {{baseUrl}}/api/jobs
 
@@ -72,4 +85,15 @@ Content-Type: application/json
 
 {
   "type": "send-welcome-email"
+}
+
+### Reject missing email in payload
+POST {{baseUrl}}/api/jobs
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "user_123"
+  }
 }

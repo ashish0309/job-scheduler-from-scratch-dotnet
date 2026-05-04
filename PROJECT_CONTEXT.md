@@ -63,6 +63,7 @@ Act like a principal engineer at Microsoft helping me build this ASP.NET Core pr
 - Call out risks early, especially around data modeling, async behavior, testing, and UX flow.
 - Keep code changes small and coherent.
 - Use existing project patterns unless there is a strong reason to change them.
+- Create new files in a dedicated folder for their concern; create that folder first if it does not already exist.
 
 ## Communication Style
 - Be direct but collaborative.
