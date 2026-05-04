@@ -41,7 +41,7 @@ public sealed class QueuedJobWorker : BackgroundService
 
     public async Task<bool> ProcessNextJobAsync(CancellationToken cancellationToken)
     {
-        var job = _jobs.TryClaimNextQueuedJob();
+        var job = _jobs.TryClaimNextDueJob(DateTimeOffset.UtcNow);
         if (job is null)
         {
             return false;

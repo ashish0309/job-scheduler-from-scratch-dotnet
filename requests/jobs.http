@@ -64,6 +64,19 @@ Content-Type: application/json
   }
 }
 
+### Enqueue a delayed job
+POST {{baseUrl}}/api/jobs
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "delaySeconds": 30,
+  "payload": {
+    "userId": "user_scheduled",
+    "email": "scheduled@example.com"
+  }
+}
+
 ### List jobs
 GET {{baseUrl}}/api/jobs
 

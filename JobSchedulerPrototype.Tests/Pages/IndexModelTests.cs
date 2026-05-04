@@ -13,18 +13,21 @@ public sealed class IndexModelTests
         var completedJob = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
         var failedJob = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 1, 0, TimeSpan.Zero));
         var queuedJob = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 2, 0, TimeSpan.Zero));
+        var scheduledAt = new DateTimeOffset(2026, 5, 4, 10, 10, 0, TimeSpan.Zero);
+        var scheduledJob = CreateScheduledJob(scheduledAt);
         store.Add(queuedJob);
         store.Add(completedJob);
         store.Add(failedJob);
-        store.TryClaimNextQueuedJob();
+        store.Add(scheduledJob);
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero));
         store.MarkCompleted(completedJob.Id);
-        store.TryClaimNextQueuedJob();
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero));
         store.MarkFailed(failedJob.Id, "SMTP server unavailable.");
         var model = new IndexModel(store);
 
         model.OnGet();
 
-        Assert.Equal(3, model.Jobs.Count);
+        Assert.Equal(4, model.Jobs.Count);
         Assert.Equal(1, model.QueuedCount);
         Assert.Equal(0, model.RunningCount);
         Assert.Equal(1, model.CompletedCount);
@@ -70,6 +73,16 @@ public sealed class IndexModelTests
         Assert.Equal(completedSummary.CurrentStateChangeId, completedSummary.History[^1].Id);
         Assert.Equal(JobStatus.Completed, completedSummary.History[^1].Status);
         Assert.Equal("Job completed successfully.", completedSummary.History[^1].Reason);
+
+        var scheduledSummary = model.Jobs.Single(job => job.Id == scheduledJob.Id);
+        Assert.Equal(JobStatus.Scheduled, scheduledSummary.Status);
+        Assert.Equal(scheduledAt, scheduledSummary.ScheduledAt);
+        Assert.Null(scheduledSummary.StartedAt);
+        var scheduledStateChange = Assert.Single(scheduledSummary.History);
+        Assert.Equal(scheduledSummary.CurrentStateChangeId, scheduledStateChange.Id);
+        Assert.Equal(JobStatus.Scheduled, scheduledStateChange.Status);
+        Assert.Equal(scheduledAt, scheduledStateChange.ScheduledAt);
+        Assert.Equal("Job scheduled.", scheduledStateChange.Reason);
     }
 
     private static JobRecord CreateJob(DateTimeOffset enqueuedAt)
@@ -80,6 +93,17 @@ public sealed class IndexModelTests
             Payload(),
             maxAttempts: 3,
             enqueuedAt);
+    }
+
+    private static JobRecord CreateScheduledJob(DateTimeOffset scheduledAt)
+    {
+        return JobRecord.Schedule(
+            Guid.NewGuid(),
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            scheduledAt,
+            new DateTimeOffset(2026, 5, 4, 10, 3, 0, TimeSpan.Zero));
     }
 
     private static JsonElement Payload()

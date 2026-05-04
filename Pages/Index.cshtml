@@ -48,6 +48,7 @@ else
                     <th scope="col">Job</th>
                     <th scope="col">Status</th>
                     <th scope="col">Attempts</th>
+                    <th scope="col">Scheduled</th>
                     <th scope="col">Enqueued</th>
                     <th scope="col">Started</th>
                     <th scope="col">Finished</th>
@@ -74,6 +75,7 @@ else
                                 <span class="text-muted">Retry available</span>
                             }
                         </td>
+                        <td>@FormatTimestamp(job.ScheduledAt)</td>
                         <td>@job.EnqueuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")</td>
                         <td>@FormatTimestamp(job.StartedAt)</td>
                         <td>@FormatTimestamp(job.CompletedAt ?? job.FailedAt)</td>
@@ -96,6 +98,10 @@ else
                                         <li class="@(stateChange.Id == job.CurrentStateChangeId ? "current-state-change" : null)">
                                             <span class="history-status">@stateChange.Status</span>
                                             <span class="history-time">@FormatTimestamp(stateChange.ChangedAt)</span>
+                                            @if (stateChange.ScheduledAt is not null)
+                                            {
+                                                <span class="history-time">Runs at @FormatTimestamp(stateChange.ScheduledAt)</span>
+                                            }
                                             <span class="history-reason">@stateChange.Reason</span>
                                         </li>
                                     }

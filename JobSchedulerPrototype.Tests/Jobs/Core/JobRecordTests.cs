@@ -29,12 +29,44 @@ public sealed class JobRecordTests
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
         Assert.Null(job.FailedAt);
+        Assert.Null(job.ScheduledAt);
 
         var stateChange = Assert.Single(job.History);
         Assert.NotEqual(Guid.Empty, stateChange.Id);
         Assert.Equal(JobStatus.Queued, stateChange.Status);
         Assert.Equal(enqueuedAt, stateChange.ChangedAt);
         Assert.Equal("Job accepted.", stateChange.Reason);
+        Assert.Same(JobStateDetails.None, stateChange.Details);
+    }
+
+    [Fact]
+    public void ScheduleCreatesScheduledJobWithScheduledStateDetails()
+    {
+        var id = Guid.NewGuid();
+        var changedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);
+        var scheduledAt = changedAt.AddSeconds(30);
+
+        var job = JobRecord.Schedule(
+            id,
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            scheduledAt,
+            changedAt);
+
+        Assert.Equal(id, job.Id);
+        Assert.Equal(JobStatus.Scheduled, job.Status);
+        Assert.Equal(scheduledAt, job.ScheduledAt);
+        Assert.Equal(changedAt, job.EnqueuedAt);
+        Assert.Equal(job.History[^1].Id, job.CurrentStateChangeId);
+
+        var stateChange = Assert.Single(job.History);
+        Assert.Equal(JobStatus.Scheduled, stateChange.Status);
+        Assert.Equal(changedAt, stateChange.ChangedAt);
+        Assert.Equal("Job scheduled.", stateChange.Reason);
+        var details = Assert.IsType<ScheduledJobStateDetails>(stateChange.Details);
+        Assert.Equal(scheduledAt, details.ScheduledAt);
+        Assert.Equal(scheduledAt, stateChange.ScheduledAt);
     }
 
     [Fact]
@@ -136,6 +168,20 @@ public sealed class JobRecordTests
             Payload(),
             maxAttempts: 0,
             new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero)));
+    }
+
+    [Fact]
+    public void ScheduleRejectsMaxAttemptsLessThanOne()
+    {
+        var now = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => JobRecord.Schedule(
+            Guid.NewGuid(),
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 0,
+            now.AddSeconds(30),
+            now));
     }
 
     private static JsonElement Payload()

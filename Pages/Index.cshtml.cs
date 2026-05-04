@@ -36,6 +36,7 @@ public sealed record JobSummary(
     JobStatus Status,
     Guid CurrentStateChangeId,
     DateTimeOffset EnqueuedAt,
+    DateTimeOffset? ScheduledAt,
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
     DateTimeOffset? FailedAt,
@@ -54,6 +55,7 @@ public sealed record JobSummary(
             job.Status,
             job.CurrentStateChangeId,
             job.EnqueuedAt,
+            job.ScheduledAt,
             job.StartedAt,
             job.CompletedAt,
             job.FailedAt,
@@ -70,7 +72,8 @@ public sealed record JobStateChangeSummary(
     Guid Id,
     JobStatus Status,
     DateTimeOffset ChangedAt,
-    string Reason)
+    string Reason,
+    DateTimeOffset? ScheduledAt)
 {
     public static JobStateChangeSummary From(JobStateChange stateChange)
     {
@@ -78,6 +81,7 @@ public sealed record JobStateChangeSummary(
             stateChange.Id,
             stateChange.Status,
             stateChange.ChangedAt,
-            stateChange.Reason);
+            stateChange.Reason,
+            stateChange.ScheduledAt);
     }
 }

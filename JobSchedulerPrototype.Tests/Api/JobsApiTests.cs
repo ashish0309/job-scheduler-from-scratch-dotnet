@@ -37,6 +37,7 @@ public sealed class JobsApiTests
         Assert.Equal("send-welcome-email", body.Type);
         Assert.Equal("Queued", body.Status);
         Assert.Null(body.FailureReason);
+        Assert.Null(body.ScheduledAt);
         Assert.Null(body.StartedAt);
         Assert.Null(body.CompletedAt);
         Assert.Null(body.FailedAt);
@@ -81,6 +82,7 @@ public sealed class JobsApiTests
         Assert.Equal("send-welcome-email", job.Type);
         Assert.Equal("Queued", job.Status);
         Assert.Null(job.FailureReason);
+        Assert.Null(job.ScheduledAt);
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
         Assert.Null(job.FailedAt);
@@ -91,6 +93,37 @@ public sealed class JobsApiTests
         Assert.Equal(job.CurrentStateChangeId, stateChange.Id);
         Assert.Equal("Queued", stateChange.Status);
         Assert.Equal($"/api/jobs/{postedJob.Id}", job.StatusUrl);
+    }
+
+    [Fact]
+    public async Task PostJobsAcceptsDelayedJobAsScheduled()
+    {
+        await using var factory = new JobsApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/api/jobs", new
+        {
+            type = "send-welcome-email",
+            delaySeconds = 30,
+            payload = new
+            {
+                userId = "user_123",
+                email = "person@example.com"
+            }
+        });
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        var body = await response.Content.ReadFromJsonAsync<JobResponse>();
+        Assert.NotNull(body);
+        Assert.Equal("Scheduled", body.Status);
+        Assert.NotNull(body.ScheduledAt);
+        Assert.Null(body.StartedAt);
+        var stateChange = Assert.Single(body.History);
+        Assert.Equal(body.CurrentStateChangeId, stateChange.Id);
+        Assert.Equal("Scheduled", stateChange.Status);
+        Assert.Equal("Job scheduled.", stateChange.Reason);
+        Assert.Equal(body.ScheduledAt, stateChange.ScheduledAt);
     }
 
     [Fact]
@@ -135,7 +168,7 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextQueuedJob();
+            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero));
             store.MarkFailed(jobId, "SMTP server unavailable.");
         });
         using var client = factory.CreateClient();
@@ -150,6 +183,7 @@ public sealed class JobsApiTests
         Assert.Equal("Failed", job.Status);
         Assert.Equal("SMTP server unavailable.", job.FailureReason);
         Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero), job.EnqueuedAt);
+        Assert.Null(job.ScheduledAt);
         Assert.NotNull(job.StartedAt);
         Assert.Null(job.CompletedAt);
         Assert.NotNull(job.FailedAt);
@@ -176,7 +210,7 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextQueuedJob();
+            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero));
             store.MarkCompleted(jobId);
         });
         using var client = factory.CreateClient();
@@ -190,6 +224,7 @@ public sealed class JobsApiTests
         Assert.Equal(jobId, job.Id);
         Assert.Equal("Completed", job.Status);
         Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero), job.EnqueuedAt);
+        Assert.Null(job.ScheduledAt);
         Assert.NotNull(job.StartedAt);
         Assert.NotNull(job.CompletedAt);
         Assert.Null(job.FailedAt);
@@ -216,7 +251,7 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextQueuedJob();
+            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero));
             store.MarkFailed(jobId, "SMTP server unavailable.");
         });
         using var client = factory.CreateClient();
@@ -252,7 +287,7 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextQueuedJob();
+            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero));
             store.MarkFailed(jobId, "SMTP server unavailable.");
         });
         using var client = factory.CreateClient();
@@ -357,6 +392,32 @@ public sealed class JobsApiTests
                     payload = new { }
                 },
                 "Job type is required."
+            },
+            {
+                new
+                {
+                    type = "send-welcome-email",
+                    delaySeconds = -1,
+                    payload = new
+                    {
+                        userId = "user_123",
+                        email = "person@example.com"
+                    }
+                },
+                "Delay seconds cannot be negative."
+            },
+            {
+                new
+                {
+                    type = "send-welcome-email",
+                    delaySeconds = 3601,
+                    payload = new
+                    {
+                        userId = "user_123",
+                        email = "person@example.com"
+                    }
+                },
+                "Delay seconds exceeds the maximum allowed for this job type."
             }
         };
     }

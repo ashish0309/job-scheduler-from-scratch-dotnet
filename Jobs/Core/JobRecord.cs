@@ -15,6 +15,10 @@ public sealed record JobRecord
 
     public DateTimeOffset EnqueuedAt => History[0].ChangedAt;
 
+    public DateTimeOffset? ScheduledAt => History
+        .LastOrDefault(change => change.Status == JobStatus.Scheduled)
+        ?.ScheduledAt;
+
     public DateTimeOffset? StartedAt => ChangedAt(JobStatus.Running);
 
     public DateTimeOffset? CompletedAt => ChangedAt(JobStatus.Completed);
@@ -57,8 +61,7 @@ public sealed record JobRecord
             throw new ArgumentOutOfRangeException(nameof(maxAttempts), "Max attempts must be at least 1.");
         }
 
-        var queuedChange = JobStateChange.Create(
-            JobStatus.Queued,
+        var queuedChange = JobStateChange.Queued(
             enqueuedAt,
             "Job accepted.");
 
@@ -73,9 +76,38 @@ public sealed record JobRecord
             [queuedChange]);
     }
 
+    public static JobRecord Schedule(
+        Guid id,
+        string type,
+        JsonElement payload,
+        int maxAttempts,
+        DateTimeOffset scheduledAt,
+        DateTimeOffset changedAt)
+    {
+        if (maxAttempts < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxAttempts), "Max attempts must be at least 1.");
+        }
+
+        var scheduledChange = JobStateChange.Scheduled(
+            changedAt,
+            "Job scheduled.",
+            scheduledAt);
+
+        return new JobRecord(
+            id,
+            type,
+            payload,
+            JobStatus.Scheduled,
+            scheduledChange.Id,
+            maxAttempts,
+            failureReason: null,
+            [scheduledChange]);
+    }
+
     public JobRecord TransitionTo(JobStatus nextStatus, DateTimeOffset changedAt)
     {
-        var stateChange = JobStateChange.Create(nextStatus, changedAt, ReasonFor(nextStatus));
+        var stateChange = StateChangeFor(nextStatus, changedAt, ReasonFor(nextStatus));
 
         return this with
         {
@@ -87,8 +119,7 @@ public sealed record JobRecord
 
     public JobRecord Retry(DateTimeOffset queuedAt)
     {
-        var stateChange = JobStateChange.Create(
-            JobStatus.Queued,
+        var stateChange = JobStateChange.Queued(
             queuedAt,
             "Manually retried.");
 
@@ -103,7 +134,7 @@ public sealed record JobRecord
 
     public JobRecord TransitionToFailed(string reason, DateTimeOffset changedAt)
     {
-        var stateChange = JobStateChange.Create(JobStatus.Failed, changedAt, reason);
+        var stateChange = JobStateChange.Failed(changedAt, reason);
 
         return this with
         {
@@ -128,6 +159,7 @@ public sealed record JobRecord
     {
         return status switch
         {
+            JobStatus.Scheduled => "Job scheduled.",
             JobStatus.Queued => "Job queued.",
             JobStatus.Running => "Worker claimed job.",
             JobStatus.Completed => "Job completed successfully.",
@@ -135,23 +167,107 @@ public sealed record JobRecord
             _ => "Job state changed."
         };
     }
-}
 
-public sealed record JobStateChange(
-    Guid Id,
-    JobStatus Status,
-    DateTimeOffset ChangedAt,
-    string Reason)
-{
-    public static JobStateChange Create(
+    private static JobStateChange StateChangeFor(
         JobStatus status,
         DateTimeOffset changedAt,
         string reason)
+    {
+        return status switch
+        {
+            JobStatus.Queued => JobStateChange.Queued(changedAt, reason),
+            JobStatus.Running => JobStateChange.Running(changedAt, reason),
+            JobStatus.Completed => JobStateChange.Completed(changedAt, reason),
+            JobStatus.Failed => JobStateChange.Failed(changedAt, reason),
+            JobStatus.Scheduled => throw new InvalidOperationException(
+                "Use Schedule to create scheduled state changes."),
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Unsupported job status.")
+        };
+    }
+}
+
+public sealed record JobStateChange
+{
+    private JobStateChange(
+        Guid id,
+        JobStatus status,
+        DateTimeOffset changedAt,
+        string reason,
+        JobStateDetails details)
+    {
+        Id = id;
+        Status = status;
+        ChangedAt = changedAt;
+        Reason = reason;
+        Details = details;
+    }
+
+    public Guid Id { get; }
+
+    public JobStatus Status { get; }
+
+    public DateTimeOffset ChangedAt { get; }
+
+    public string Reason { get; }
+
+    public JobStateDetails Details { get; }
+
+    public DateTimeOffset? ScheduledAt => Details is ScheduledJobStateDetails details
+        ? details.ScheduledAt
+        : null;
+
+    public static JobStateChange Queued(DateTimeOffset changedAt, string reason)
+    {
+        return Create(JobStatus.Queued, changedAt, reason, JobStateDetails.None);
+    }
+
+    public static JobStateChange Scheduled(
+        DateTimeOffset changedAt,
+        string reason,
+        DateTimeOffset scheduledAt)
+    {
+        return Create(
+            JobStatus.Scheduled,
+            changedAt,
+            reason,
+            new ScheduledJobStateDetails(scheduledAt));
+    }
+
+    public static JobStateChange Running(DateTimeOffset changedAt, string reason)
+    {
+        return Create(JobStatus.Running, changedAt, reason, JobStateDetails.None);
+    }
+
+    public static JobStateChange Completed(DateTimeOffset changedAt, string reason)
+    {
+        return Create(JobStatus.Completed, changedAt, reason, JobStateDetails.None);
+    }
+
+    public static JobStateChange Failed(DateTimeOffset changedAt, string reason)
+    {
+        return Create(JobStatus.Failed, changedAt, reason, JobStateDetails.None);
+    }
+
+    private static JobStateChange Create(
+        JobStatus status,
+        DateTimeOffset changedAt,
+        string reason,
+        JobStateDetails details)
     {
         return new JobStateChange(
             Guid.NewGuid(),
             status,
             changedAt,
-            reason);
+            reason,
+            details);
     }
 }
+
+public abstract record JobStateDetails
+{
+    public static JobStateDetails None { get; } = new EmptyJobStateDetails();
+
+    private sealed record EmptyJobStateDetails : JobStateDetails;
+}
+
+public sealed record ScheduledJobStateDetails(DateTimeOffset ScheduledAt) : JobStateDetails;
