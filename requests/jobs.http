@@ -1,0 +1,36 @@
+@baseUrl = http://localhost:5000
+
+### Enqueue a supported job
+POST {{baseUrl}}/api/jobs
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "user_123",
+    "email": "person@example.com"
+  }
+}
+
+### List jobs
+GET {{baseUrl}}/api/jobs
+
+### Get a job by id
+GET {{baseUrl}}/api/jobs/00000000-0000-0000-0000-000000000000
+
+### Reject unsupported job type
+POST {{baseUrl}}/api/jobs
+Content-Type: application/json
+
+{
+  "type": "not-a-real-job",
+  "payload": {}
+}
+
+### Reject missing payload
+POST {{baseUrl}}/api/jobs
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email"
+}
