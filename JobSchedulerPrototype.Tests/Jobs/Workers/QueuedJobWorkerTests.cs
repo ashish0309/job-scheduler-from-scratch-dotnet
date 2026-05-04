@@ -1,5 +1,6 @@
 using System.Text.Json;
 using JobSchedulerPrototype.Jobs;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace JobSchedulerPrototype.Tests.Jobs;
 
@@ -15,6 +16,7 @@ public sealed class QueuedJobWorkerTests
             store,
             new StubJobDispatcher(JobExecutionResult.Success()),
             DefinitionRegistry(),
+            NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
 
@@ -39,6 +41,7 @@ public sealed class QueuedJobWorkerTests
             store,
             new StubJobDispatcher(JobExecutionResult.Failure("Simulated welcome email failure.")),
             DefinitionRegistry(),
+            NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
 
@@ -69,6 +72,7 @@ public sealed class QueuedJobWorkerTests
             store,
             new StubJobDispatcher(JobExecutionResult.Failure("Simulated welcome email failure.")),
             DefinitionRegistry(),
+            NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
 
@@ -92,6 +96,7 @@ public sealed class QueuedJobWorkerTests
             store,
             new StubJobDispatcher(JobExecutionResult.Success()),
             DefinitionRegistry(),
+            NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
 
