@@ -6,9 +6,9 @@ public sealed class SendWelcomeEmailJobDefinition : IJobDefinition
 {
     public string Type => JobTypes.SendWelcomeEmail;
 
-    public int DefaultMaxAttempts => 3;
-
-    public int RetryDelaySeconds => 10;
+    public JobRetryPolicy RetryPolicy { get; } = JobRetryPolicy.Create(
+        maxAttempts: 3,
+        delay: TimeSpan.FromSeconds(10));
 
     public int MaxScheduleDelaySeconds => 3600;
 

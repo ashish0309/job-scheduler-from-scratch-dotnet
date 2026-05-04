@@ -37,14 +37,14 @@ public static class JobsApi
                 id,
                 request.Type,
                 validationResult.Payload,
-                validationResult.DefaultMaxAttempts,
+                validationResult.RetryPolicy.MaxAttempts,
                 now.AddSeconds(validationResult.DelaySeconds),
                 now)
             : JobRecord.Enqueue(
                 id,
                 request.Type,
                 validationResult.Payload,
-                validationResult.DefaultMaxAttempts,
+                validationResult.RetryPolicy.MaxAttempts,
                 now);
 
         jobs.Add(job);
@@ -107,7 +107,7 @@ public static class JobsApi
 
         return EnqueueJobValidationResult.Valid(
             payloadValidation.Payload,
-            definition.DefaultMaxAttempts,
+            definition.RetryPolicy,
             delaySeconds);
     }
 
@@ -197,19 +197,19 @@ public sealed record JobValidationError(string Message);
 internal sealed record EnqueueJobValidationResult(
     bool IsValid,
     JsonElement Payload,
-    int DefaultMaxAttempts,
+    JobRetryPolicy RetryPolicy,
     int DelaySeconds,
     string ErrorMessage)
 {
     public static EnqueueJobValidationResult Valid(
         JsonElement payload,
-        int defaultMaxAttempts,
+        JobRetryPolicy retryPolicy,
         int delaySeconds)
     {
         return new EnqueueJobValidationResult(
             true,
             payload.Clone(),
-            defaultMaxAttempts,
+            retryPolicy,
             delaySeconds,
             ErrorMessage: string.Empty);
     }
@@ -219,7 +219,7 @@ internal sealed record EnqueueJobValidationResult(
         return new EnqueueJobValidationResult(
             false,
             default,
-            DefaultMaxAttempts: 0,
+            RetryPolicy: JobRetryPolicy.Create(maxAttempts: 1, TimeSpan.Zero),
             DelaySeconds: 0,
             errorMessage);
     }

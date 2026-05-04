@@ -6,9 +6,7 @@ public interface IJobDefinition
 {
     string Type { get; }
 
-    int DefaultMaxAttempts { get; }
-
-    int RetryDelaySeconds { get; }
+    JobRetryPolicy RetryPolicy { get; }
 
     int MaxScheduleDelaySeconds { get; }
 

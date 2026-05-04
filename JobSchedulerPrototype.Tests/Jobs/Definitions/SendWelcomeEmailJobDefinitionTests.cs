@@ -13,8 +13,8 @@ public sealed class SendWelcomeEmailJobDefinitionTests
         var result = definition.ValidatePayload(Payload(
             """{"userId":"user_123","email":"person@example.com","shouldFail":true}"""));
 
-        Assert.Equal(3, definition.DefaultMaxAttempts);
-        Assert.Equal(10, definition.RetryDelaySeconds);
+        Assert.Equal(3, definition.RetryPolicy.MaxAttempts);
+        Assert.Equal(TimeSpan.FromSeconds(10), definition.RetryPolicy.Delay);
         Assert.True(result.IsValid);
         Assert.Null(result.ErrorMessage);
 

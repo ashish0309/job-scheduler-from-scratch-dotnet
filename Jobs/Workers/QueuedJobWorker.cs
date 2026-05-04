@@ -79,7 +79,7 @@ public sealed class QueuedJobWorker : BackgroundService
         else if (job.AttemptCount < job.MaxAttempts
             && _definitions.Find(job.Type) is { } definition)
         {
-            var scheduledAt = DateTimeOffset.UtcNow.AddSeconds(definition.RetryDelaySeconds);
+            var scheduledAt = DateTimeOffset.UtcNow.Add(definition.RetryPolicy.Delay);
             _jobs.ScheduleRetry(
                 job.Id,
                 failureReason,
