@@ -40,6 +40,9 @@ public sealed class JobsApiTests
         Assert.Null(body.StartedAt);
         Assert.Null(body.CompletedAt);
         Assert.Null(body.FailedAt);
+        Assert.Equal(0, body.AttemptCount);
+        Assert.Equal(3, body.MaxAttempts);
+        Assert.False(body.RetryAvailable);
         Assert.Equal($"/api/jobs/{body.Id}", body.StatusUrl);
         Assert.Equal(new Uri(body.StatusUrl, UriKind.Relative), response.Headers.Location);
     }
@@ -76,6 +79,9 @@ public sealed class JobsApiTests
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
         Assert.Null(job.FailedAt);
+        Assert.Equal(0, job.AttemptCount);
+        Assert.Equal(3, job.MaxAttempts);
+        Assert.False(job.RetryAvailable);
         Assert.Equal($"/api/jobs/{postedJob.Id}", job.StatusUrl);
     }
 
@@ -117,6 +123,7 @@ public sealed class JobsApiTests
                 jobId,
                 "send-welcome-email",
                 Payload(),
+                maxAttempts: 3,
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
@@ -138,6 +145,9 @@ public sealed class JobsApiTests
         Assert.NotNull(job.StartedAt);
         Assert.Null(job.CompletedAt);
         Assert.NotNull(job.FailedAt);
+        Assert.Equal(1, job.AttemptCount);
+        Assert.Equal(3, job.MaxAttempts);
+        Assert.True(job.RetryAvailable);
     }
 
     [Fact]
@@ -150,6 +160,7 @@ public sealed class JobsApiTests
                 jobId,
                 "send-welcome-email",
                 Payload(),
+                maxAttempts: 3,
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
@@ -170,6 +181,79 @@ public sealed class JobsApiTests
         Assert.NotNull(job.StartedAt);
         Assert.NotNull(job.CompletedAt);
         Assert.Null(job.FailedAt);
+        Assert.Equal(1, job.AttemptCount);
+        Assert.Equal(3, job.MaxAttempts);
+        Assert.False(job.RetryAvailable);
+    }
+
+    [Fact]
+    public async Task RetryJobMovesEligibleFailedJobBackToQueued()
+    {
+        var jobId = Guid.NewGuid();
+        await using var factory = new JobsApiFactory(store =>
+        {
+            var job = JobRecord.Enqueue(
+                jobId,
+                "send-welcome-email",
+                Payload(),
+                maxAttempts: 3,
+                new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
+
+            store.Add(job);
+            store.TryClaimNextQueuedJob();
+            store.MarkFailed(jobId, "SMTP server unavailable.");
+        });
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync($"/api/jobs/{jobId}/retry", content: null);
+
+        response.EnsureSuccessStatusCode();
+        var job = await response.Content.ReadFromJsonAsync<JobResponse>();
+        Assert.NotNull(job);
+        Assert.Equal(jobId, job.Id);
+        Assert.Equal("Queued", job.Status);
+        Assert.Null(job.FailureReason);
+        Assert.Equal(1, job.AttemptCount);
+        Assert.Equal(3, job.MaxAttempts);
+        Assert.False(job.RetryAvailable);
+    }
+
+    [Fact]
+    public async Task RetryJobRejectsIneligibleJobs()
+    {
+        var jobId = Guid.NewGuid();
+        await using var factory = new JobsApiFactory(store =>
+        {
+            var job = JobRecord.Enqueue(
+                jobId,
+                "send-welcome-email",
+                Payload(),
+                maxAttempts: 1,
+                new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
+
+            store.Add(job);
+            store.TryClaimNextQueuedJob();
+            store.MarkFailed(jobId, "SMTP server unavailable.");
+        });
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync($"/api/jobs/{jobId}/retry", content: null);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<JobValidationError>();
+        Assert.NotNull(error);
+        Assert.Equal("Job is not eligible for retry.", error.Message);
+    }
+
+    [Fact]
+    public async Task RetryJobReturnsNotFoundWhenJobDoesNotExist()
+    {
+        await using var factory = new JobsApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsync($"/api/jobs/{Guid.NewGuid()}/retry", content: null);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

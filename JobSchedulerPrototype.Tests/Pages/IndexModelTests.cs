@@ -37,18 +37,27 @@ public sealed class IndexModelTests
         Assert.NotNull(failedSummary.StartedAt);
         Assert.Null(failedSummary.CompletedAt);
         Assert.NotNull(failedSummary.FailedAt);
+        Assert.Equal(1, failedSummary.AttemptCount);
+        Assert.Equal(3, failedSummary.MaxAttempts);
+        Assert.True(failedSummary.RetryAvailable);
         Assert.Equal($"/api/jobs/{failedJob.Id}", failedSummary.StatusUrl);
 
         var queuedSummary = model.Jobs.Single(job => job.Id == queuedJob.Id);
         Assert.Null(queuedSummary.StartedAt);
         Assert.Null(queuedSummary.CompletedAt);
         Assert.Null(queuedSummary.FailedAt);
+        Assert.Equal(0, queuedSummary.AttemptCount);
+        Assert.Equal(3, queuedSummary.MaxAttempts);
+        Assert.False(queuedSummary.RetryAvailable);
 
         var completedSummary = model.Jobs.Single(job => job.Id == completedJob.Id);
         Assert.Equal(JobStatus.Completed, completedSummary.Status);
         Assert.NotNull(completedSummary.StartedAt);
         Assert.NotNull(completedSummary.CompletedAt);
         Assert.Null(completedSummary.FailedAt);
+        Assert.Equal(1, completedSummary.AttemptCount);
+        Assert.Equal(3, completedSummary.MaxAttempts);
+        Assert.False(completedSummary.RetryAvailable);
     }
 
     private static JobRecord CreateJob(DateTimeOffset enqueuedAt)
@@ -57,6 +66,7 @@ public sealed class IndexModelTests
             Guid.NewGuid(),
             "send-welcome-email",
             Payload(),
+            maxAttempts: 3,
             enqueuedAt);
     }
 

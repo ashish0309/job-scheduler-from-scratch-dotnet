@@ -6,6 +6,8 @@ public interface IJobDefinition
 {
     string Type { get; }
 
+    int DefaultMaxAttempts { get; }
+
     JobPayloadValidationResult ValidatePayload(JsonElement payload);
 }
 

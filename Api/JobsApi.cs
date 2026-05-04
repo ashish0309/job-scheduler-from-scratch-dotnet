@@ -13,6 +13,7 @@ public static class JobsApi
         group.MapPost("", EnqueueJob);
         group.MapGet("", ListJobs);
         group.MapGet("/{id:guid}", GetJob);
+        group.MapPost("/{id:guid}/retry", RetryJob);
 
         return group;
     }
@@ -32,6 +33,7 @@ public static class JobsApi
             Guid.NewGuid(),
             request.Type,
             validationResult.Payload,
+            validationResult.DefaultMaxAttempts,
             DateTimeOffset.UtcNow);
 
         jobs.Add(job);
@@ -60,6 +62,24 @@ public static class JobsApi
             : TypedResults.Ok(ToResponse(job));
     }
 
+    private static Results<Ok<JobResponse>, NotFound, Conflict<JobValidationError>> RetryJob(
+        Guid id,
+        IJobStore jobs)
+    {
+        var job = jobs.Get(id);
+        if (job is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        if (!jobs.Retry(id))
+        {
+            return TypedResults.Conflict(new JobValidationError("Job is not eligible for retry."));
+        }
+
+        return TypedResults.Ok(ToResponse(jobs.Get(id)!));
+    }
+
     private static EnqueueJobValidationResult Validate(
         EnqueueJobRequest request,
         IJobDefinitionRegistry definitions)
@@ -81,7 +101,9 @@ public static class JobsApi
             return EnqueueJobValidationResult.Invalid(payloadValidation.ErrorMessage ?? "Job payload is invalid.");
         }
 
-        return EnqueueJobValidationResult.Valid(payloadValidation.Payload);
+        return EnqueueJobValidationResult.Valid(
+            payloadValidation.Payload,
+            definition.DefaultMaxAttempts);
     }
 
     private static JobResponse ToResponse(JobRecord job)
@@ -95,6 +117,9 @@ public static class JobsApi
             job.StartedAt,
             job.CompletedAt,
             job.FailedAt,
+            job.AttemptCount,
+            job.MaxAttempts,
+            job.RetryAvailable,
             $"/api/jobs/{job.Id}");
     }
 }
@@ -112,6 +137,9 @@ public sealed record JobResponse(
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
     DateTimeOffset? FailedAt,
+    int AttemptCount,
+    int MaxAttempts,
+    bool RetryAvailable,
     string StatusUrl);
 
 public sealed record JobValidationError(string Message);
@@ -119,15 +147,24 @@ public sealed record JobValidationError(string Message);
 internal sealed record EnqueueJobValidationResult(
     bool IsValid,
     JsonElement Payload,
+    int DefaultMaxAttempts,
     string ErrorMessage)
 {
-    public static EnqueueJobValidationResult Valid(JsonElement payload)
+    public static EnqueueJobValidationResult Valid(JsonElement payload, int defaultMaxAttempts)
     {
-        return new EnqueueJobValidationResult(true, payload.Clone(), ErrorMessage: string.Empty);
+        return new EnqueueJobValidationResult(
+            true,
+            payload.Clone(),
+            defaultMaxAttempts,
+            ErrorMessage: string.Empty);
     }
 
     public static EnqueueJobValidationResult Invalid(string errorMessage)
     {
-        return new EnqueueJobValidationResult(false, default, errorMessage);
+        return new EnqueueJobValidationResult(
+            false,
+            default,
+            DefaultMaxAttempts: 0,
+            errorMessage);
     }
 }

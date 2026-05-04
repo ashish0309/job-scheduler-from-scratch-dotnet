@@ -83,4 +83,23 @@ public sealed class InMemoryJobStore : IJobStore
 
         return false;
     }
+
+    public bool Retry(Guid id)
+    {
+        while (_jobs.TryGetValue(id, out var job))
+        {
+            if (!job.RetryAvailable)
+            {
+                return false;
+            }
+
+            var retriedJob = job.Retry(DateTimeOffset.UtcNow);
+            if (_jobs.TryUpdate(id, retriedJob, job))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

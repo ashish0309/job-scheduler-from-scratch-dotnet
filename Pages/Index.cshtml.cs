@@ -38,6 +38,9 @@ public sealed record JobSummary(
     DateTimeOffset? StartedAt,
     DateTimeOffset? CompletedAt,
     DateTimeOffset? FailedAt,
+    int AttemptCount,
+    int MaxAttempts,
+    bool RetryAvailable,
     string StatusUrl,
     string? FailureReason)
 {
@@ -51,6 +54,9 @@ public sealed record JobSummary(
             job.StartedAt,
             job.CompletedAt,
             job.FailedAt,
+            job.AttemptCount,
+            job.MaxAttempts,
+            job.RetryAvailable,
             $"/api/jobs/{job.Id}",
             job.FailureReason);
     }

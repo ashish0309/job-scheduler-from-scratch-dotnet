@@ -34,7 +34,9 @@ public sealed class InMemoryJobStoreTests
         Assert.NotNull(claimedJob);
         Assert.Equal(earlierJob.Id, claimedJob.Id);
         Assert.Equal(JobStatus.Running, claimedJob.Status);
+        Assert.Equal(claimedJob.History[^1].Id, claimedJob.CurrentStateChangeId);
         Assert.Equal([JobStatus.Queued, JobStatus.Running], claimedJob.History.Select(change => change.Status));
+        Assert.Equal("Worker claimed job.", claimedJob.History[^1].Reason);
         Assert.Equal(JobStatus.Running, store.Get(earlierJob.Id)?.Status);
         Assert.Equal(JobStatus.Queued, store.Get(laterJob.Id)?.Status);
     }
@@ -70,6 +72,8 @@ public sealed class InMemoryJobStoreTests
         Assert.True(runningCompletion);
         Assert.NotNull(completedJob);
         Assert.Equal(JobStatus.Completed, completedJob.Status);
+        Assert.Equal(completedJob.History[^1].Id, completedJob.CurrentStateChangeId);
+        Assert.Equal("Job completed successfully.", completedJob.History[^1].Reason);
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Completed],
             completedJob.History.Select(change => change.Status));
@@ -102,7 +106,9 @@ public sealed class InMemoryJobStoreTests
         Assert.True(runningFailure);
         Assert.NotNull(failedJob);
         Assert.Equal(JobStatus.Failed, failedJob.Status);
+        Assert.Equal(failedJob.History[^1].Id, failedJob.CurrentStateChangeId);
         Assert.Equal("SMTP server unavailable.", failedJob.FailureReason);
+        Assert.Equal("SMTP server unavailable.", failedJob.History[^1].Reason);
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Failed],
             failedJob.History.Select(change => change.Status));
@@ -132,12 +138,62 @@ public sealed class InMemoryJobStoreTests
         Assert.False(failed);
     }
 
-    private static JobRecord CreateJob(DateTimeOffset? enqueuedAt = null)
+    [Fact]
+    public void RetryMovesFailedJobBackToQueuedWhenAttemptsRemain()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        store.Add(job);
+        store.TryClaimNextQueuedJob();
+        store.MarkFailed(job.Id, "SMTP server unavailable.");
+
+        var retried = store.Retry(job.Id);
+        var retriedJob = store.Get(job.Id);
+
+        Assert.True(retried);
+        Assert.NotNull(retriedJob);
+        Assert.Equal(JobStatus.Queued, retriedJob.Status);
+        Assert.Equal(retriedJob.History[^1].Id, retriedJob.CurrentStateChangeId);
+        Assert.Null(retriedJob.FailureReason);
+        Assert.Equal(1, retriedJob.AttemptCount);
+        Assert.False(retriedJob.RetryAvailable);
+        Assert.Equal(
+            [JobStatus.Queued, JobStatus.Running, JobStatus.Failed, JobStatus.Queued],
+            retriedJob.History.Select(change => change.Status));
+        Assert.Equal("Manually retried.", retriedJob.History[^1].Reason);
+    }
+
+    [Fact]
+    public void RetryReturnsFalseWhenJobIsNotEligible()
+    {
+        var store = new InMemoryJobStore();
+        var exhaustedJob = CreateJob(
+            enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero),
+            maxAttempts: 1);
+        var queuedJob = CreateJob(
+            enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 1, 0, TimeSpan.Zero));
+        store.Add(queuedJob);
+        store.Add(exhaustedJob);
+        store.TryClaimNextQueuedJob();
+        store.MarkFailed(exhaustedJob.Id, "SMTP server unavailable.");
+
+        var queuedRetry = store.Retry(queuedJob.Id);
+        var exhaustedRetry = store.Retry(exhaustedJob.Id);
+        var missingRetry = store.Retry(Guid.NewGuid());
+
+        Assert.False(queuedRetry);
+        Assert.False(exhaustedRetry);
+        Assert.False(missingRetry);
+        Assert.Equal(JobStatus.Failed, store.Get(exhaustedJob.Id)?.Status);
+    }
+
+    private static JobRecord CreateJob(DateTimeOffset? enqueuedAt = null, int maxAttempts = 3)
     {
         return JobRecord.Enqueue(
             Guid.NewGuid(),
             "send-welcome-email",
             Payload(),
+            maxAttempts,
             enqueuedAt ?? new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
     }
 

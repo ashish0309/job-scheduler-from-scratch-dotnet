@@ -13,4 +13,6 @@ public interface IJobStore
     bool MarkCompleted(Guid id);
 
     bool MarkFailed(Guid id, string reason);
+
+    bool Retry(Guid id);
 }

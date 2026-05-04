@@ -6,6 +6,8 @@ public sealed class SendWelcomeEmailJobDefinition : IJobDefinition
 {
     public string Type => JobTypes.SendWelcomeEmail;
 
+    public int DefaultMaxAttempts => 3;
+
     public JobPayloadValidationResult ValidatePayload(JsonElement payload)
     {
         if (payload.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)

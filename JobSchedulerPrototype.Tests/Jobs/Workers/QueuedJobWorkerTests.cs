@@ -73,6 +73,7 @@ public sealed class QueuedJobWorkerTests
             Guid.NewGuid(),
             "send-welcome-email",
             Payload(),
+            maxAttempts: 3,
             new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
     }
 

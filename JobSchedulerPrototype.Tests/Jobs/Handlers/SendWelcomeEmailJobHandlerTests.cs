@@ -49,6 +49,7 @@ public sealed class SendWelcomeEmailJobHandlerTests
             Guid.NewGuid(),
             JobTypes.SendWelcomeEmail,
             document.RootElement.Clone(),
+            maxAttempts: 3,
             new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
     }
 }

@@ -47,6 +47,7 @@ else
                 <tr>
                     <th scope="col">Job</th>
                     <th scope="col">Status</th>
+                    <th scope="col">Attempts</th>
                     <th scope="col">Enqueued</th>
                     <th scope="col">Started</th>
                     <th scope="col">Finished</th>
@@ -64,6 +65,13 @@ else
                         </td>
                         <td>
                             <span class="status-badge status-@job.Status.ToString().ToLowerInvariant()">@job.Status</span>
+                        </td>
+                        <td>
+                            @job.AttemptCount of @job.MaxAttempts
+                            @if (job.RetryAvailable)
+                            {
+                                <span class="text-muted">Retry available</span>
+                            }
                         </td>
                         <td>@job.EnqueuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")</td>
                         <td>@FormatTimestamp(job.StartedAt)</td>

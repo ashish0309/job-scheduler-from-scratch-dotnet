@@ -8,6 +8,8 @@ public sealed record JobRecord
     public string Type { get; private init; }
     public JsonElement Payload { get; private init; }
     public JobStatus Status { get; private init; }
+    public Guid CurrentStateChangeId { get; private init; }
+    public int MaxAttempts { get; private init; }
     public string? FailureReason { get; private init; }
     public IReadOnlyList<JobStateChange> History { get; private init; }
 
@@ -19,11 +21,17 @@ public sealed record JobRecord
 
     public DateTimeOffset? FailedAt => ChangedAt(JobStatus.Failed);
 
+    public int AttemptCount => History.Count(change => change.Status == JobStatus.Running);
+
+    public bool RetryAvailable => Status == JobStatus.Failed && AttemptCount < MaxAttempts;
+
     private JobRecord(
         Guid id,
         string type,
         JsonElement payload,
         JobStatus status,
+        Guid currentStateChangeId,
+        int maxAttempts,
         string? failureReason,
         IReadOnlyList<JobStateChange> history)
     {
@@ -31,6 +39,8 @@ public sealed record JobRecord
         Type = type;
         Payload = payload;
         Status = status;
+        CurrentStateChangeId = currentStateChangeId;
+        MaxAttempts = maxAttempts;
         FailureReason = failureReason;
         History = history;
     }
@@ -39,33 +49,68 @@ public sealed record JobRecord
         Guid id,
         string type,
         JsonElement payload,
+        int maxAttempts,
         DateTimeOffset enqueuedAt)
     {
+        if (maxAttempts < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxAttempts), "Max attempts must be at least 1.");
+        }
+
+        var queuedChange = JobStateChange.Create(
+            JobStatus.Queued,
+            enqueuedAt,
+            "Job accepted.");
+
         return new JobRecord(
             id,
             type,
             payload,
             JobStatus.Queued,
+            queuedChange.Id,
+            maxAttempts,
             failureReason: null,
-            [new JobStateChange(JobStatus.Queued, enqueuedAt)]);
+            [queuedChange]);
     }
 
     public JobRecord TransitionTo(JobStatus nextStatus, DateTimeOffset changedAt)
     {
+        var stateChange = JobStateChange.Create(nextStatus, changedAt, ReasonFor(nextStatus));
+
         return this with
         {
             Status = nextStatus,
-            History = [.. History, new JobStateChange(nextStatus, changedAt)]
+            CurrentStateChangeId = stateChange.Id,
+            History = [.. History, stateChange]
+        };
+    }
+
+    public JobRecord Retry(DateTimeOffset queuedAt)
+    {
+        var stateChange = JobStateChange.Create(
+            JobStatus.Queued,
+            queuedAt,
+            "Manually retried.");
+
+        return this with
+        {
+            Status = JobStatus.Queued,
+            CurrentStateChangeId = stateChange.Id,
+            FailureReason = null,
+            History = [.. History, stateChange]
         };
     }
 
     public JobRecord TransitionToFailed(string reason, DateTimeOffset changedAt)
     {
+        var stateChange = JobStateChange.Create(JobStatus.Failed, changedAt, reason);
+
         return this with
         {
             Status = JobStatus.Failed,
+            CurrentStateChangeId = stateChange.Id,
             FailureReason = reason,
-            History = [.. History, new JobStateChange(JobStatus.Failed, changedAt)]
+            History = [.. History, stateChange]
         };
     }
 
@@ -78,8 +123,35 @@ public sealed record JobRecord
     {
         return History.LastOrDefault(change => change.Status == status)?.ChangedAt;
     }
+
+    private static string ReasonFor(JobStatus status)
+    {
+        return status switch
+        {
+            JobStatus.Queued => "Job queued.",
+            JobStatus.Running => "Worker claimed job.",
+            JobStatus.Completed => "Job completed successfully.",
+            JobStatus.Failed => "Job failed.",
+            _ => "Job state changed."
+        };
+    }
 }
 
 public sealed record JobStateChange(
+    Guid Id,
     JobStatus Status,
-    DateTimeOffset ChangedAt);
+    DateTimeOffset ChangedAt,
+    string Reason)
+{
+    public static JobStateChange Create(
+        JobStatus status,
+        DateTimeOffset changedAt,
+        string reason)
+    {
+        return new JobStateChange(
+            Guid.NewGuid(),
+            status,
+            changedAt,
+            reason);
+    }
+}
