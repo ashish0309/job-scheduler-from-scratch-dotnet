@@ -185,6 +185,29 @@ public sealed class SqliteJobStore : IJobStore
         return true;
     }
 
+    public bool RenewLease(
+        Guid id,
+        Guid expectedCurrentStateChangeId,
+        DateTimeOffset renewedAt,
+        DateTimeOffset leaseExpiresAt)
+    {
+        if (leaseExpiresAt <= renewedAt)
+        {
+            return false;
+        }
+
+        using var db = _dbContextFactory.CreateDbContext();
+
+        var rowsUpdated = db.Jobs
+            .Where(existingJob => existingJob.Id == id
+                && existingJob.Status == JobStatus.Running
+                && existingJob.CurrentStateChangeId == expectedCurrentStateChangeId)
+            .ExecuteUpdate(setters => setters
+                .SetProperty(existingJob => existingJob.LeaseExpiresAt, leaseExpiresAt));
+
+        return rowsUpdated > 0;
+    }
+
     public bool MarkFailed(Guid id, Guid expectedCurrentStateChangeId, string reason)
     {
         if (string.IsNullOrWhiteSpace(reason))

@@ -13,6 +13,12 @@ public interface IJobStore
         string workerId,
         DateTimeOffset leaseExpiresAt);
 
+    bool RenewLease(
+        Guid id,
+        Guid expectedCurrentStateChangeId,
+        DateTimeOffset renewedAt,
+        DateTimeOffset leaseExpiresAt);
+
     bool MarkCompleted(Guid id, Guid expectedCurrentStateChangeId);
 
     bool MarkFailed(Guid id, Guid expectedCurrentStateChangeId, string reason);

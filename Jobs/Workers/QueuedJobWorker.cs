@@ -9,6 +9,7 @@ public sealed class QueuedJobWorker : IJobWorker
     private readonly ILogger<QueuedJobWorker> _logger;
     private readonly TimeSpan _simulatedWorkDuration;
     private readonly TimeSpan _leaseDuration;
+    private readonly TimeSpan _leaseRenewalInterval;
 
     public QueuedJobWorker(
         IJobLifecycleService lifecycle,
@@ -45,6 +46,7 @@ public sealed class QueuedJobWorker : IJobWorker
         _logger = logger;
         _simulatedWorkDuration = simulatedWorkDuration;
         _leaseDuration = leaseDuration;
+        _leaseRenewalInterval = LeaseRenewalIntervalFor(leaseDuration);
     }
 
     public async Task<bool> ProcessNextJobAsync(string workerId, CancellationToken cancellationToken)
@@ -63,8 +65,23 @@ public sealed class QueuedJobWorker : IJobWorker
             job.Type,
             job.AttemptCount);
 
-        await Task.Delay(_simulatedWorkDuration, cancellationToken);
-        var result = await ExecuteJob(job, cancellationToken);
+        using var leaseRenewalCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var leaseRenewalTask = RenewLeaseUntilExecutionStops(
+            job,
+            workerId,
+            leaseRenewalCancellation.Token);
+        JobExecutionResult result;
+
+        try
+        {
+            await Task.Delay(_simulatedWorkDuration, cancellationToken);
+            result = await ExecuteJob(job, cancellationToken);
+        }
+        finally
+        {
+            await StopLeaseRenewal(leaseRenewalCancellation, leaseRenewalTask);
+        }
+
         var completion = _lifecycle.CompleteExecution(job, result);
 
         if (completion.Status == JobExecutionCompletionStatus.Completed)
@@ -134,5 +151,62 @@ public sealed class QueuedJobWorker : IJobWorker
 
             return JobExecutionResult.Failure("Job execution threw an unhandled exception.");
         }
+    }
+
+    private async Task RenewLeaseUntilExecutionStops(
+        JobRecord job,
+        string workerId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(_leaseRenewalInterval, cancellationToken);
+
+                var renewedAt = DateTimeOffset.UtcNow;
+                var renewed = _lifecycle.RenewLease(
+                    job,
+                    renewedAt,
+                    renewedAt.Add(_leaseDuration));
+
+                if (!renewed)
+                {
+                    _logger.LogWarning(
+                        "Worker {WorkerId} could not renew lease for job {JobId} type={JobType} attempt={AttemptNumber}",
+                        workerId,
+                        job.Id,
+                        job.Type,
+                        job.AttemptCount);
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Worker {WorkerId} lease renewal failed for job {JobId} type={JobType} attempt={AttemptNumber}",
+                workerId,
+                job.Id,
+                job.Type,
+                job.AttemptCount);
+        }
+    }
+
+    private static async Task StopLeaseRenewal(
+        CancellationTokenSource leaseRenewalCancellation,
+        Task leaseRenewalTask)
+    {
+        await leaseRenewalCancellation.CancelAsync();
+        await leaseRenewalTask;
+    }
+
+    private static TimeSpan LeaseRenewalIntervalFor(TimeSpan leaseDuration)
+    {
+        return TimeSpan.FromTicks(Math.Max(TimeSpan.FromMilliseconds(1).Ticks, leaseDuration.Ticks / 2));
     }
 }

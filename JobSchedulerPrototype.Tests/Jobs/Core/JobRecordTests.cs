@@ -208,6 +208,32 @@ public sealed class JobRecordTests
     }
 
     [Fact]
+    public void RenewLeaseExtendsLeaseWithoutAddingHistory()
+    {
+        var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);
+        var claimedAt = enqueuedAt.AddSeconds(5);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var renewedAt = claimedAt.AddSeconds(30);
+        var renewedLeaseExpiresAt = renewedAt.AddMinutes(1);
+        var job = JobRecord.Enqueue(
+            Guid.NewGuid(),
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            enqueuedAt)
+            .Claim("worker-1", claimedAt, leaseExpiresAt);
+
+        var renewedJob = job.RenewLease(renewedAt, renewedLeaseExpiresAt);
+
+        Assert.Equal(JobStatus.Running, renewedJob.Status);
+        Assert.Equal("worker-1", renewedJob.ClaimedBy);
+        Assert.Equal(claimedAt, renewedJob.ClaimedAt);
+        Assert.Equal(renewedLeaseExpiresAt, renewedJob.LeaseExpiresAt);
+        Assert.Equal(job.CurrentStateChangeId, renewedJob.CurrentStateChangeId);
+        Assert.Equal(job.History.Count, renewedJob.History.Count);
+    }
+
+    [Fact]
     public void TransitionToFailedAppendsHistoryAndCapturesReason()
     {
         var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);

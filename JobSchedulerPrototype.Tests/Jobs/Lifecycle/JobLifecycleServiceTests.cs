@@ -92,6 +92,21 @@ public sealed class JobLifecycleServiceTests
     }
 
     [Fact]
+    public void RenewLeaseExtendsClaimedJobLease()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+        var job = RunningJob(store);
+        var renewedAt = new DateTimeOffset(2026, 5, 4, 10, 1, 30, TimeSpan.Zero);
+        var renewedLeaseExpiresAt = renewedAt.AddMinutes(1);
+
+        var renewed = lifecycle.RenewLease(job, renewedAt, renewedLeaseExpiresAt);
+
+        Assert.True(renewed);
+        Assert.Equal(renewedLeaseExpiresAt, store.Get(job.Id)?.LeaseExpiresAt);
+    }
+
+    [Fact]
     public void CompleteExecutionMarksJobCompletedWhenExecutionSucceeds()
     {
         var store = new InMemoryJobStore();

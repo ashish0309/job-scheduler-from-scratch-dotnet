@@ -87,6 +87,61 @@ public sealed class InMemoryJobStoreTests
     }
 
     [Fact]
+    public void RenewLeaseExtendsRunningJobLease()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var renewedAt = claimedAt.AddSeconds(30);
+        var renewedLeaseExpiresAt = renewedAt.AddMinutes(1);
+        store.Add(job);
+        var runningJob = store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+        Assert.NotNull(runningJob);
+
+        var renewed = store.RenewLease(
+            job.Id,
+            runningJob.CurrentStateChangeId,
+            renewedAt,
+            renewedLeaseExpiresAt);
+
+        Assert.True(renewed);
+        var persistedJob = store.Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal(JobStatus.Running, persistedJob.Status);
+        Assert.Equal("worker-1", persistedJob.ClaimedBy);
+        Assert.Equal(renewedLeaseExpiresAt, persistedJob.LeaseExpiresAt);
+        Assert.Equal(runningJob.CurrentStateChangeId, persistedJob.CurrentStateChangeId);
+        Assert.Equal(runningJob.History.Count, persistedJob.History.Count);
+    }
+
+    [Fact]
+    public void RenewLeaseReturnsFalseWhenClaimTokenIsStale()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        store.Add(job);
+        var staleRunningJob = store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+        Assert.NotNull(staleRunningJob);
+        var currentRunningJob = store.TryClaimNextDueJob(leaseExpiresAt, "worker-2", leaseExpiresAt.AddMinutes(1));
+        Assert.NotNull(currentRunningJob);
+
+        var renewed = store.RenewLease(
+            job.Id,
+            staleRunningJob.CurrentStateChangeId,
+            leaseExpiresAt.AddSeconds(30),
+            leaseExpiresAt.AddMinutes(2));
+
+        Assert.False(renewed);
+        var persistedJob = store.Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal("worker-2", persistedJob.ClaimedBy);
+        Assert.Equal(currentRunningJob.LeaseExpiresAt, persistedJob.LeaseExpiresAt);
+    }
+
+    [Fact]
     public void TryClaimNextDueJobDoesNotClaimScheduledJobBeforeRunAt()
     {
         var store = new InMemoryJobStore();

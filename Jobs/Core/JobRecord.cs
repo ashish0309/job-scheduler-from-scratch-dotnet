@@ -235,6 +235,35 @@ public sealed record JobRecord
             [.. History, stateChange]);
     }
 
+    public JobRecord RenewLease(DateTimeOffset renewedAt, DateTimeOffset leaseExpiresAt)
+    {
+        if (Status != JobStatus.Running)
+        {
+            throw new InvalidOperationException("Only running jobs can renew a lease.");
+        }
+
+        if (leaseExpiresAt <= renewedAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(leaseExpiresAt),
+                "Lease expiry must be after the renewal time.");
+        }
+
+        return new JobRecord(
+            Id,
+            Type,
+            Payload,
+            Status,
+            CurrentStateChangeId,
+            RunAt,
+            ClaimedBy,
+            ClaimedAt,
+            leaseExpiresAt,
+            MaxAttempts,
+            FailureReason,
+            History);
+    }
+
     public JobRecord ScheduleRetry(
         string failureReason,
         DateTimeOffset failedAt,

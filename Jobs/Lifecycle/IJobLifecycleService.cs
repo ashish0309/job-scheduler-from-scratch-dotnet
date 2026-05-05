@@ -11,6 +11,11 @@ public interface IJobLifecycleService
         string workerId,
         DateTimeOffset leaseExpiresAt);
 
+    bool RenewLease(
+        JobRecord job,
+        DateTimeOffset renewedAt,
+        DateTimeOffset leaseExpiresAt);
+
     JobExecutionCompletion CompleteExecution(JobRecord job, JobExecutionResult result);
 }
 

@@ -30,6 +30,40 @@ public sealed class QueuedJobWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextJobAsyncRenewsLeaseWhileExecutionIsRunning()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        var dispatcher = new BlockingJobDispatcher();
+        var leaseDuration = TimeSpan.FromMilliseconds(120);
+        store.Add(job);
+        var worker = new QueuedJobWorker(
+            LifecycleService(store),
+            dispatcher,
+            NullLogger<QueuedJobWorker>.Instance,
+            simulatedWorkDuration: TimeSpan.Zero,
+            leaseDuration);
+
+        var processingTask = worker.ProcessNextJobAsync("worker-1", CancellationToken.None);
+        await dispatcher.ExecutionStarted.WaitAsync(TimeSpan.FromSeconds(5));
+        var initialLeaseExpiresAt = store.Get(job.Id)?.LeaseExpiresAt;
+        Assert.NotNull(initialLeaseExpiresAt);
+
+        await WaitUntilAsync(
+            () => store.Get(job.Id)?.LeaseExpiresAt > initialLeaseExpiresAt,
+            TimeSpan.FromSeconds(5));
+        var reclaimAttempt = store.TryClaimNextDueJob(
+            initialLeaseExpiresAt.Value,
+            "worker-2",
+            initialLeaseExpiresAt.Value.Add(leaseDuration));
+
+        Assert.Null(reclaimAttempt);
+        dispatcher.Complete(JobExecutionResult.Success());
+        Assert.True(await processingTask.WaitAsync(TimeSpan.FromSeconds(5)));
+        Assert.Equal(JobStatus.Completed, store.Get(job.Id)?.Status);
+    }
+
+    [Fact]
     public async Task ProcessNextJobAsyncSchedulesRetryWhenExecutionFailsAndAttemptsRemain()
     {
         var store = new InMemoryJobStore();
@@ -165,6 +199,16 @@ public sealed class QueuedJobWorkerTests
         return document.RootElement.Clone();
     }
 
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        using var timeoutCancellation = new CancellationTokenSource(timeout);
+
+        while (!condition())
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(10), timeoutCancellation.Token);
+        }
+    }
+
     private sealed class StubJobDispatcher : IJobDispatcher
     {
         private readonly JobExecutionResult _result;
@@ -185,6 +229,27 @@ public sealed class QueuedJobWorkerTests
         public Task<JobExecutionResult> ExecuteAsync(JobRecord job, CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("The job handler exploded.");
+        }
+    }
+
+    private sealed class BlockingJobDispatcher : IJobDispatcher
+    {
+        private readonly TaskCompletionSource<JobExecutionResult> _completion = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _executionStarted = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task ExecutionStarted => _executionStarted.Task;
+
+        public void Complete(JobExecutionResult result)
+        {
+            _completion.SetResult(result);
+        }
+
+        public Task<JobExecutionResult> ExecuteAsync(JobRecord job, CancellationToken cancellationToken)
+        {
+            _executionStarted.SetResult();
+            return _completion.Task.WaitAsync(cancellationToken);
         }
     }
 }

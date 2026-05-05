@@ -58,6 +58,18 @@ public sealed class JobLifecycleService : IJobLifecycleService
         return _jobs.TryClaimNextDueJob(now, workerId, leaseExpiresAt);
     }
 
+    public bool RenewLease(
+        JobRecord job,
+        DateTimeOffset renewedAt,
+        DateTimeOffset leaseExpiresAt)
+    {
+        return _jobs.RenewLease(
+            job.Id,
+            job.CurrentStateChangeId,
+            renewedAt,
+            leaseExpiresAt);
+    }
+
     public JobExecutionCompletion CompleteExecution(
         JobRecord job,
         JobExecutionResult result)

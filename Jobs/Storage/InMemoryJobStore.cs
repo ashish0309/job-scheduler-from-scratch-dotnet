@@ -97,6 +97,31 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    public bool RenewLease(
+        Guid id,
+        Guid expectedCurrentStateChangeId,
+        DateTimeOffset renewedAt,
+        DateTimeOffset leaseExpiresAt)
+    {
+        if (leaseExpiresAt <= renewedAt)
+        {
+            return false;
+        }
+
+        lock (_lock)
+        {
+            if (!_jobsById.TryGetValue(id, out var job)
+                || job.Status != JobStatus.Running
+                || job.CurrentStateChangeId != expectedCurrentStateChangeId)
+            {
+                return false;
+            }
+
+            _jobsById[id] = job.RenewLease(renewedAt, leaseExpiresAt);
+            return true;
+        }
+    }
+
     public bool MarkFailed(Guid id, Guid expectedCurrentStateChangeId, string reason)
     {
         if (string.IsNullOrWhiteSpace(reason))
