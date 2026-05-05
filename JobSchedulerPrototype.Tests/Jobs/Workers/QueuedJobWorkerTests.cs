@@ -13,9 +13,8 @@ public sealed class QueuedJobWorkerTests
         var job = CreateJob();
         store.Add(job);
         var worker = new QueuedJobWorker(
-            store,
+            LifecycleService(store),
             new StubJobDispatcher(JobExecutionResult.Success()),
-            DefinitionRegistry(),
             NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -38,9 +37,8 @@ public sealed class QueuedJobWorkerTests
         var job = CreateJob();
         store.Add(job);
         var worker = new QueuedJobWorker(
-            store,
+            LifecycleService(store),
             new StubJobDispatcher(JobExecutionResult.Failure("Simulated welcome email failure.")),
-            DefinitionRegistry(),
             NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -69,9 +67,8 @@ public sealed class QueuedJobWorkerTests
         var job = CreateJob(maxAttempts: 1);
         store.Add(job);
         var worker = new QueuedJobWorker(
-            store,
+            LifecycleService(store),
             new StubJobDispatcher(JobExecutionResult.Failure("Simulated welcome email failure.")),
-            DefinitionRegistry(),
             NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -93,9 +90,8 @@ public sealed class QueuedJobWorkerTests
     {
         var store = new InMemoryJobStore();
         var worker = new QueuedJobWorker(
-            store,
+            LifecycleService(store),
             new StubJobDispatcher(JobExecutionResult.Success()),
-            DefinitionRegistry(),
             NullLogger<QueuedJobWorker>.Instance,
             pollInterval: TimeSpan.Zero,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -118,6 +114,11 @@ public sealed class QueuedJobWorkerTests
     private static IJobDefinitionRegistry DefinitionRegistry()
     {
         return new JobDefinitionRegistry([new SendWelcomeEmailJobDefinition()]);
+    }
+
+    private static IJobLifecycleService LifecycleService(IJobStore store)
+    {
+        return new JobLifecycleService(store, DefinitionRegistry());
     }
 
     private static JsonElement Payload()

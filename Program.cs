@@ -8,6 +8,7 @@ builder.Services.AddRazorPages();
 builder.Services.AddSingleton<IJobStore, InMemoryJobStore>();
 builder.Services.AddSingleton<IJobDefinition, SendWelcomeEmailJobDefinition>();
 builder.Services.AddSingleton<IJobDefinitionRegistry, JobDefinitionRegistry>();
+builder.Services.AddSingleton<IJobLifecycleService, JobLifecycleService>();
 builder.Services.AddSingleton<IJobHandler, SendWelcomeEmailJobHandler>();
 builder.Services.AddSingleton<IJobHandlerRegistry, JobHandlerRegistry>();
 builder.Services.AddSingleton<IJobDispatcher, JobDispatcher>();

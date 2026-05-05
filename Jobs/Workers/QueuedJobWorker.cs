@@ -5,33 +5,29 @@ public sealed class QueuedJobWorker : BackgroundService
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan SimulatedWorkDuration = TimeSpan.FromSeconds(2);
 
-    private readonly IJobStore _jobs;
+    private readonly IJobLifecycleService _lifecycle;
     private readonly IJobDispatcher _dispatcher;
-    private readonly IJobDefinitionRegistry _definitions;
     private readonly ILogger<QueuedJobWorker> _logger;
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _simulatedWorkDuration;
 
     public QueuedJobWorker(
-        IJobStore jobs,
+        IJobLifecycleService lifecycle,
         IJobDispatcher dispatcher,
-        IJobDefinitionRegistry definitions,
         ILogger<QueuedJobWorker> logger)
-        : this(jobs, dispatcher, definitions, logger, PollInterval, SimulatedWorkDuration)
+        : this(lifecycle, dispatcher, logger, PollInterval, SimulatedWorkDuration)
     {
     }
 
     public QueuedJobWorker(
-        IJobStore jobs,
+        IJobLifecycleService lifecycle,
         IJobDispatcher dispatcher,
-        IJobDefinitionRegistry definitions,
         ILogger<QueuedJobWorker> logger,
         TimeSpan pollInterval,
         TimeSpan simulatedWorkDuration)
     {
-        _jobs = jobs;
+        _lifecycle = lifecycle;
         _dispatcher = dispatcher;
-        _definitions = definitions;
         _logger = logger;
         _pollInterval = pollInterval;
         _simulatedWorkDuration = simulatedWorkDuration;
@@ -51,7 +47,7 @@ public sealed class QueuedJobWorker : BackgroundService
 
     public async Task<bool> ProcessNextJobAsync(CancellationToken cancellationToken)
     {
-        var job = _jobs.TryClaimNextDueJob(DateTimeOffset.UtcNow);
+        var job = _lifecycle.ClaimNextDueJob(DateTimeOffset.UtcNow);
         if (job is null)
         {
             return false;
@@ -65,43 +61,35 @@ public sealed class QueuedJobWorker : BackgroundService
 
         await Task.Delay(_simulatedWorkDuration, cancellationToken);
         var result = await _dispatcher.ExecuteAsync(job, cancellationToken);
-        var failureReason = result.FailureReason ?? "Job execution failed.";
+        var completion = _lifecycle.CompleteExecution(job, result);
 
-        if (result.Succeeded)
+        if (completion.Status == JobExecutionCompletionStatus.Completed)
         {
-            _jobs.MarkCompleted(job.Id);
             _logger.LogInformation(
                 "Completed job {JobId} type={JobType} attempt={AttemptNumber}",
                 job.Id,
                 job.Type,
                 job.AttemptCount);
         }
-        else if (job.AttemptCount < job.MaxAttempts
-            && _definitions.Find(job.Type) is { } definition)
+        else if (completion.Status == JobExecutionCompletionStatus.RetryScheduled)
         {
-            var scheduledAt = DateTimeOffset.UtcNow.Add(definition.RetryPolicy.Delay);
-            _jobs.ScheduleRetry(
-                job.Id,
-                failureReason,
-                scheduledAt);
             _logger.LogWarning(
                 "Failed job {JobId} type={JobType} attempt={AttemptNumber} reason={FailureReason}; scheduled retry attempt={NextAttemptNumber} runAt={ScheduledAt}",
                 job.Id,
                 job.Type,
                 job.AttemptCount,
-                failureReason,
+                completion.FailureReason,
                 job.AttemptCount + 1,
-                scheduledAt);
+                completion.RetryScheduledAt);
         }
         else
         {
-            _jobs.MarkFailed(job.Id, failureReason);
             _logger.LogError(
                 "Failed job {JobId} type={JobType} finalAttempt={AttemptNumber} reason={FailureReason}",
                 job.Id,
                 job.Type,
                 job.AttemptCount,
-                failureReason);
+                completion.FailureReason);
         }
 
         return true;

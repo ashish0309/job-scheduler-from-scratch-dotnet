@@ -1,0 +1,166 @@
+using System.Text.Json;
+using JobSchedulerPrototype.Jobs;
+
+namespace JobSchedulerPrototype.Tests.Jobs;
+
+public sealed class JobLifecycleServiceTests
+{
+    [Fact]
+    public void EnqueueCreatesQueuedJobForValidImmediateRequest()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+
+        var result = lifecycle.Enqueue(
+            "send-welcome-email",
+            Payload(),
+            delaySeconds: null);
+
+        Assert.True(result.Accepted);
+        Assert.NotNull(result.Job);
+        Assert.Null(result.ErrorMessage);
+        Assert.Equal(JobStatus.Queued, result.Job.Status);
+        Assert.Equal(3, result.Job.MaxAttempts);
+        Assert.Equal(result.Job, store.Get(result.Job.Id));
+    }
+
+    [Fact]
+    public void EnqueueCreatesScheduledJobForValidDelayedRequest()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+
+        var result = lifecycle.Enqueue(
+            "send-welcome-email",
+            Payload(),
+            delaySeconds: 30);
+
+        Assert.True(result.Accepted);
+        Assert.NotNull(result.Job);
+        Assert.Equal(JobStatus.Scheduled, result.Job.Status);
+        Assert.NotNull(result.Job.ScheduledAt);
+        Assert.Equal(result.Job, store.Get(result.Job.Id));
+    }
+
+    [Theory]
+    [InlineData("", """{"userId":"user_123","email":"person@example.com"}""", null, "Job type is required.")]
+    [InlineData("not-a-real-job", """{}""", null, "Unsupported job type.")]
+    [InlineData("send-welcome-email", """{"email":"person@example.com"}""", null, "User ID is required.")]
+    [InlineData("send-welcome-email", """{"userId":"user_123","email":"person@example.com"}""", -1, "Delay seconds cannot be negative.")]
+    [InlineData("send-welcome-email", """{"userId":"user_123","email":"person@example.com"}""", 3601, "Delay seconds exceeds the maximum allowed for this job type.")]
+    public void EnqueueRejectsInvalidRequests(
+        string type,
+        string payloadJson,
+        int? delaySeconds,
+        string expectedErrorMessage)
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+
+        var result = lifecycle.Enqueue(
+            type,
+            Payload(payloadJson),
+            delaySeconds);
+
+        Assert.False(result.Accepted);
+        Assert.Null(result.Job);
+        Assert.Equal(expectedErrorMessage, result.ErrorMessage);
+        Assert.Empty(store.List());
+    }
+
+    [Fact]
+    public void ClaimNextDueJobClaimsRunnableJob()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+        var enqueued = lifecycle.Enqueue(
+            "send-welcome-email",
+            Payload(),
+            delaySeconds: null);
+
+        var claimedJob = lifecycle.ClaimNextDueJob(DateTimeOffset.UtcNow);
+
+        Assert.NotNull(enqueued.Job);
+        Assert.NotNull(claimedJob);
+        Assert.Equal(enqueued.Job.Id, claimedJob.Id);
+        Assert.Equal(JobStatus.Running, claimedJob.Status);
+    }
+
+    [Fact]
+    public void CompleteExecutionMarksJobCompletedWhenExecutionSucceeds()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+        var job = RunningJob(store);
+
+        var completion = lifecycle.CompleteExecution(job, JobExecutionResult.Success());
+
+        Assert.Equal(JobExecutionCompletionStatus.Completed, completion.Status);
+        Assert.Equal(JobStatus.Completed, store.Get(job.Id)?.Status);
+        Assert.Null(completion.FailureReason);
+        Assert.Null(completion.RetryScheduledAt);
+    }
+
+    [Fact]
+    public void CompleteExecutionSchedulesRetryWhenExecutionFailsAndAttemptsRemain()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+        var job = RunningJob(store);
+
+        var completion = lifecycle.CompleteExecution(
+            job,
+            JobExecutionResult.Failure("SMTP server unavailable."));
+
+        var retriedJob = store.Get(job.Id);
+        Assert.Equal(JobExecutionCompletionStatus.RetryScheduled, completion.Status);
+        Assert.Equal("SMTP server unavailable.", completion.FailureReason);
+        Assert.NotNull(completion.RetryScheduledAt);
+        Assert.NotNull(retriedJob);
+        Assert.Equal(JobStatus.Scheduled, retriedJob.Status);
+        Assert.Equal("SMTP server unavailable.", retriedJob.FailureReason);
+    }
+
+    [Fact]
+    public void CompleteExecutionMarksJobFailedWhenExecutionFailsAndAttemptsAreExhausted()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+        var job = RunningJob(store, maxAttempts: 1);
+
+        var completion = lifecycle.CompleteExecution(
+            job,
+            JobExecutionResult.Failure("SMTP server unavailable."));
+
+        Assert.Equal(JobExecutionCompletionStatus.Failed, completion.Status);
+        Assert.Equal("SMTP server unavailable.", completion.FailureReason);
+        Assert.Null(completion.RetryScheduledAt);
+        Assert.Equal(JobStatus.Failed, store.Get(job.Id)?.Status);
+    }
+
+    private static JobRecord RunningJob(InMemoryJobStore store, int maxAttempts = 3)
+    {
+        var job = JobRecord.Enqueue(
+            Guid.NewGuid(),
+            "send-welcome-email",
+            Payload(),
+            maxAttempts,
+            new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
+        store.Add(job);
+        return store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 1, 0, TimeSpan.Zero))!;
+    }
+
+    private static JobLifecycleService CreateLifecycle(IJobStore store)
+    {
+        return new JobLifecycleService(
+            store,
+            new JobDefinitionRegistry([new SendWelcomeEmailJobDefinition()]));
+    }
+
+    private static JsonElement Payload(
+        string json = """{"userId":"user_123","email":"person@example.com"}""")
+    {
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
+    }
+}

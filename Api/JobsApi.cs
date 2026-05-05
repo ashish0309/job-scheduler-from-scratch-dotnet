@@ -6,8 +6,6 @@ namespace JobSchedulerPrototype.Api;
 
 public static class JobsApi
 {
-    private const int ImmediateDelaySeconds = 0;
-
     public static RouteGroupBuilder MapJobsApi(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/jobs");
@@ -21,35 +19,20 @@ public static class JobsApi
 
     private static Results<Accepted<JobResponse>, BadRequest<JobValidationError>> EnqueueJob(
         EnqueueJobRequest request,
-        IJobStore jobs,
-        IJobDefinitionRegistry definitions)
+        IJobLifecycleService lifecycle)
     {
-        var validationResult = Validate(request, definitions);
-        if (!validationResult.IsValid)
+        var result = lifecycle.Enqueue(
+            request.Type,
+            request.Payload,
+            request.DelaySeconds);
+
+        if (!result.Accepted)
         {
-            return TypedResults.BadRequest(new JobValidationError(validationResult.ErrorMessage));
+            return TypedResults.BadRequest(new JobValidationError(
+                result.ErrorMessage ?? "Job request is invalid."));
         }
 
-        var now = DateTimeOffset.UtcNow;
-        var id = Guid.NewGuid();
-        var job = validationResult.DelaySeconds > ImmediateDelaySeconds
-            ? JobRecord.Schedule(
-                id,
-                request.Type,
-                validationResult.Payload,
-                validationResult.RetryPolicy.MaxAttempts,
-                now.AddSeconds(validationResult.DelaySeconds),
-                now)
-            : JobRecord.Enqueue(
-                id,
-                request.Type,
-                validationResult.Payload,
-                validationResult.RetryPolicy.MaxAttempts,
-                now);
-
-        jobs.Add(job);
-
-        var response = ToResponse(job);
+        var response = ToResponse(result.Job!);
         return TypedResults.Accepted(response.StatusUrl, response);
     }
 
@@ -71,44 +54,6 @@ public static class JobsApi
         return job is null
             ? TypedResults.NotFound()
             : TypedResults.Ok(ToResponse(job));
-    }
-
-    private static EnqueueJobValidationResult Validate(
-        EnqueueJobRequest request,
-        IJobDefinitionRegistry definitions)
-    {
-        if (string.IsNullOrWhiteSpace(request.Type))
-        {
-            return EnqueueJobValidationResult.Invalid("Job type is required.");
-        }
-
-        var definition = definitions.Find(request.Type);
-        if (definition is null)
-        {
-            return EnqueueJobValidationResult.Invalid("Unsupported job type.");
-        }
-
-        var payloadValidation = definition.ValidatePayload(request.Payload);
-        if (!payloadValidation.IsValid)
-        {
-            return EnqueueJobValidationResult.Invalid(payloadValidation.ErrorMessage ?? "Job payload is invalid.");
-        }
-
-        var delaySeconds = request.DelaySeconds ?? ImmediateDelaySeconds;
-        if (delaySeconds < ImmediateDelaySeconds)
-        {
-            return EnqueueJobValidationResult.Invalid("Delay seconds cannot be negative.");
-        }
-
-        if (delaySeconds > definition.MaxScheduleDelaySeconds)
-        {
-            return EnqueueJobValidationResult.Invalid("Delay seconds exceeds the maximum allowed for this job type.");
-        }
-
-        return EnqueueJobValidationResult.Valid(
-            payloadValidation.Payload,
-            definition.RetryPolicy,
-            delaySeconds);
     }
 
     private static JobResponse ToResponse(JobRecord job)
@@ -193,34 +138,3 @@ public sealed record JobStateChangeResponse(
     DateTimeOffset? ScheduledAt);
 
 public sealed record JobValidationError(string Message);
-
-internal sealed record EnqueueJobValidationResult(
-    bool IsValid,
-    JsonElement Payload,
-    JobRetryPolicy RetryPolicy,
-    int DelaySeconds,
-    string ErrorMessage)
-{
-    public static EnqueueJobValidationResult Valid(
-        JsonElement payload,
-        JobRetryPolicy retryPolicy,
-        int delaySeconds)
-    {
-        return new EnqueueJobValidationResult(
-            true,
-            payload.Clone(),
-            retryPolicy,
-            delaySeconds,
-            ErrorMessage: string.Empty);
-    }
-
-    public static EnqueueJobValidationResult Invalid(string errorMessage)
-    {
-        return new EnqueueJobValidationResult(
-            false,
-            default,
-            RetryPolicy: JobRetryPolicy.Create(maxAttempts: 1, TimeSpan.Zero),
-            DelaySeconds: 0,
-            errorMessage);
-    }
-}
