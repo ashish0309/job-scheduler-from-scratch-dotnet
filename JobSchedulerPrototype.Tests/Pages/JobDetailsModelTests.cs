@@ -19,8 +19,9 @@ public sealed class JobDetailsModelTests
             maxAttempts: 3,
             new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
         store.Add(job);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
-        store.MarkCompleted(job.Id);
+        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        Assert.NotNull(runningJob);
+        store.MarkCompleted(job.Id, runningJob.CurrentStateChangeId);
         var model = new DetailsModel(store);
 
         var result = model.OnGet(job.Id);

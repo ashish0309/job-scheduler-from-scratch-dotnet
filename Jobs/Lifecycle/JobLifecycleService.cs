@@ -66,20 +66,23 @@ public sealed class JobLifecycleService : IJobLifecycleService
 
         if (result.Succeeded)
         {
-            _jobs.MarkCompleted(job.Id);
-            return JobExecutionCompletion.Completed();
+            return _jobs.MarkCompleted(job.Id, job.CurrentStateChangeId)
+                ? JobExecutionCompletion.Completed()
+                : JobExecutionCompletion.LeaseLost();
         }
 
         if (job.AttemptCount < job.MaxAttempts
             && _definitions.Find(job.Type) is { } definition)
         {
             var scheduledAt = DateTimeOffset.UtcNow.Add(definition.RetryPolicy.Delay);
-            _jobs.ScheduleRetry(job.Id, failureReason, scheduledAt);
-            return JobExecutionCompletion.RetryScheduled(failureReason, scheduledAt);
+            return _jobs.ScheduleRetry(job.Id, job.CurrentStateChangeId, failureReason, scheduledAt)
+                ? JobExecutionCompletion.RetryScheduled(failureReason, scheduledAt)
+                : JobExecutionCompletion.LeaseLost();
         }
 
-        _jobs.MarkFailed(job.Id, failureReason);
-        return JobExecutionCompletion.Failed(failureReason);
+        return _jobs.MarkFailed(job.Id, job.CurrentStateChangeId, failureReason)
+            ? JobExecutionCompletion.Failed(failureReason)
+            : JobExecutionCompletion.LeaseLost();
     }
 
     private JobEnqueueValidationResult Validate(

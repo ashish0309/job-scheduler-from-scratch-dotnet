@@ -88,6 +88,15 @@ public sealed class QueuedJobWorker : IJobWorker
                 job.AttemptCount + 1,
                 completion.RetryScheduledAt);
         }
+        else if (completion.Status == JobExecutionCompletionStatus.LeaseLost)
+        {
+            _logger.LogWarning(
+                "Worker {WorkerId} finished job {JobId} type={JobType} attempt={AttemptNumber}, but no longer owns the running lease",
+                workerId,
+                job.Id,
+                job.Type,
+                job.AttemptCount);
+        }
         else
         {
             _logger.LogError(

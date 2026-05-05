@@ -118,8 +118,9 @@ public sealed class SqliteJobStoreTests
         var queuedJob = CreateJob(enqueuedAt: now);
         store.Add(completedJob);
         store.Add(queuedJob);
-        store.TryClaimNextDueJob(now, "worker-1", (now).AddMinutes(1));
-        store.MarkCompleted(completedJob.Id);
+        var completedRunningJob = store.TryClaimNextDueJob(now, "worker-1", (now).AddMinutes(1));
+        Assert.NotNull(completedRunningJob);
+        store.MarkCompleted(completedJob.Id, completedRunningJob.CurrentStateChangeId);
         await database.ExecuteAsync(db =>
             db.Database.ExecuteSqlInterpolatedAsync(
                 $"""UPDATE "Jobs" SET "RunAt" = {now.AddMinutes(-2).UtcDateTime.Ticks} WHERE "Id" = {completedJob.Id};"""));
@@ -188,9 +189,10 @@ public sealed class SqliteJobStoreTests
         var store = database.CreateStore();
         var job = CreateJob();
         store.Add(job);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        Assert.NotNull(runningJob);
 
-        var completed = store.MarkCompleted(job.Id);
+        var completed = store.MarkCompleted(job.Id, runningJob.CurrentStateChangeId);
         var persistedJob = database.CreateStore().Get(job.Id);
 
         Assert.True(completed);
@@ -206,15 +208,40 @@ public sealed class SqliteJobStoreTests
     }
 
     [Fact]
+    public async Task MarkCompletedReturnsFalseWhenClaimTokenIsStale()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        store.Add(job);
+        var staleRunningJob = store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+        Assert.NotNull(staleRunningJob);
+        var currentRunningJob = store.TryClaimNextDueJob(leaseExpiresAt, "worker-2", leaseExpiresAt.AddMinutes(1));
+        Assert.NotNull(currentRunningJob);
+
+        var completed = store.MarkCompleted(job.Id, staleRunningJob.CurrentStateChangeId);
+
+        Assert.False(completed);
+        var persistedJob = database.CreateStore().Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal(JobStatus.Running, persistedJob.Status);
+        Assert.Equal("worker-2", persistedJob.ClaimedBy);
+        Assert.Equal(currentRunningJob.CurrentStateChangeId, persistedJob.CurrentStateChangeId);
+    }
+
+    [Fact]
     public async Task MarkFailedCompletesRunningJobAsFailed()
     {
         await using var database = await SqliteJobStoreDatabase.CreateAsync();
         var store = database.CreateStore();
         var job = CreateJob();
         store.Add(job);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        Assert.NotNull(runningJob);
 
-        var failed = store.MarkFailed(job.Id, "SMTP server unavailable.");
+        var failed = store.MarkFailed(job.Id, runningJob.CurrentStateChangeId, "SMTP server unavailable.");
         var persistedJob = database.CreateStore().Get(job.Id);
 
         Assert.True(failed);
@@ -231,6 +258,33 @@ public sealed class SqliteJobStoreTests
     }
 
     [Fact]
+    public async Task MarkFailedReturnsFalseWhenClaimTokenIsStale()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        store.Add(job);
+        var staleRunningJob = store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+        Assert.NotNull(staleRunningJob);
+        var currentRunningJob = store.TryClaimNextDueJob(leaseExpiresAt, "worker-2", leaseExpiresAt.AddMinutes(1));
+        Assert.NotNull(currentRunningJob);
+
+        var failed = store.MarkFailed(
+            job.Id,
+            staleRunningJob.CurrentStateChangeId,
+            "SMTP server unavailable.");
+
+        Assert.False(failed);
+        var persistedJob = database.CreateStore().Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal(JobStatus.Running, persistedJob.Status);
+        Assert.Equal("worker-2", persistedJob.ClaimedBy);
+        Assert.Equal(currentRunningJob.CurrentStateChangeId, persistedJob.CurrentStateChangeId);
+    }
+
+    [Fact]
     public async Task ScheduleRetryPersistsRetryAndMakesItClaimableWhenDue()
     {
         await using var database = await SqliteJobStoreDatabase.CreateAsync();
@@ -238,9 +292,10 @@ public sealed class SqliteJobStoreTests
         var job = CreateJob();
         var scheduledAt = new DateTimeOffset(2026, 5, 4, 10, 6, 0, TimeSpan.Zero);
         store.Add(job);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        Assert.NotNull(runningJob);
 
-        var scheduled = store.ScheduleRetry(job.Id, "SMTP server unavailable.", scheduledAt);
+        var scheduled = store.ScheduleRetry(job.Id, runningJob.CurrentStateChangeId, "SMTP server unavailable.", scheduledAt);
         var earlyClaim = store.TryClaimNextDueJob(scheduledAt.AddTicks(-1), "worker-1", (scheduledAt.AddTicks(-1)).AddMinutes(1));
         var claimedRetry = store.TryClaimNextDueJob(scheduledAt, "worker-1", (scheduledAt).AddMinutes(1));
 
@@ -256,6 +311,35 @@ public sealed class SqliteJobStoreTests
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Failed, JobStatus.Scheduled, JobStatus.Queued, JobStatus.Running],
             claimedRetry.History.Select(change => change.Status));
+    }
+
+    [Fact]
+    public async Task ScheduleRetryReturnsFalseWhenClaimTokenIsStale()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var scheduledAt = leaseExpiresAt.AddMinutes(1);
+        store.Add(job);
+        var staleRunningJob = store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+        Assert.NotNull(staleRunningJob);
+        var currentRunningJob = store.TryClaimNextDueJob(leaseExpiresAt, "worker-2", leaseExpiresAt.AddMinutes(1));
+        Assert.NotNull(currentRunningJob);
+
+        var scheduled = store.ScheduleRetry(
+            job.Id,
+            staleRunningJob.CurrentStateChangeId,
+            "SMTP server unavailable.",
+            scheduledAt);
+
+        Assert.False(scheduled);
+        var persistedJob = database.CreateStore().Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal(JobStatus.Running, persistedJob.Status);
+        Assert.Equal("worker-2", persistedJob.ClaimedBy);
+        Assert.Equal(currentRunningJob.CurrentStateChangeId, persistedJob.CurrentStateChangeId);
     }
 
     [Fact]

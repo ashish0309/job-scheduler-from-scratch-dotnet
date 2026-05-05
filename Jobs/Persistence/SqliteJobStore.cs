@@ -148,7 +148,7 @@ public sealed class SqliteJobStore : IJobStore
         return LoadJob(db, runningJob.Id);
     }
 
-    public bool MarkCompleted(Guid id)
+    public bool MarkCompleted(Guid id, Guid expectedCurrentStateChangeId)
     {
         using var db = _dbContextFactory.CreateDbContext();
         using var transaction = db.Database.BeginTransaction();
@@ -164,6 +164,7 @@ public sealed class SqliteJobStore : IJobStore
             db,
             id,
             expectedStatus: JobStatus.Running,
+            expectedCurrentStateChangeId,
             completedJob,
             previousHistoryCount: job.History.Count,
             setters => setters
@@ -184,7 +185,7 @@ public sealed class SqliteJobStore : IJobStore
         return true;
     }
 
-    public bool MarkFailed(Guid id, string reason)
+    public bool MarkFailed(Guid id, Guid expectedCurrentStateChangeId, string reason)
     {
         if (string.IsNullOrWhiteSpace(reason))
         {
@@ -205,6 +206,7 @@ public sealed class SqliteJobStore : IJobStore
             db,
             id,
             expectedStatus: JobStatus.Running,
+            expectedCurrentStateChangeId,
             failedJob,
             previousHistoryCount: job.History.Count,
             setters => setters
@@ -226,7 +228,11 @@ public sealed class SqliteJobStore : IJobStore
         return true;
     }
 
-    public bool ScheduleRetry(Guid id, string reason, DateTimeOffset scheduledAt)
+    public bool ScheduleRetry(
+        Guid id,
+        Guid expectedCurrentStateChangeId,
+        string reason,
+        DateTimeOffset scheduledAt)
     {
         if (string.IsNullOrWhiteSpace(reason))
         {
@@ -249,6 +255,7 @@ public sealed class SqliteJobStore : IJobStore
             db,
             id,
             expectedStatus: JobStatus.Running,
+            expectedCurrentStateChangeId,
             retriedJob,
             previousHistoryCount: job.History.Count,
             setters => setters
@@ -304,13 +311,15 @@ public sealed class SqliteJobStore : IJobStore
         JobSchedulerDbContext db,
         Guid jobId,
         JobStatus expectedStatus,
+        Guid expectedCurrentStateChangeId,
         JobRecord updatedJob,
         int previousHistoryCount,
         Expression<Func<SetPropertyCalls<JobRecord>, SetPropertyCalls<JobRecord>>> setProperties)
     {
         var rowsUpdated = db.Jobs
             .Where(existingJob => existingJob.Id == jobId
-                && existingJob.Status == expectedStatus)
+                && existingJob.Status == expectedStatus
+                && existingJob.CurrentStateChangeId == expectedCurrentStateChangeId)
             .ExecuteUpdate(setProperties);
 
         if (rowsUpdated == 0)

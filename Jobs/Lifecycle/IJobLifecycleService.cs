@@ -60,11 +60,20 @@ public sealed record JobExecutionCompletion(
             failureReason,
             RetryScheduledAt: null);
     }
+
+    public static JobExecutionCompletion LeaseLost()
+    {
+        return new JobExecutionCompletion(
+            JobExecutionCompletionStatus.LeaseLost,
+            FailureReason: null,
+            RetryScheduledAt: null);
+    }
 }
 
 public enum JobExecutionCompletionStatus
 {
     Completed,
     RetryScheduled,
-    Failed
+    Failed,
+    LeaseLost
 }

@@ -178,8 +178,9 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
-            store.MarkFailed(jobId, "SMTP server unavailable.");
+            var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+            Assert.NotNull(runningJob);
+            store.MarkFailed(jobId, runningJob.CurrentStateChangeId, "SMTP server unavailable.");
         });
         using var client = factory.CreateClient();
 
@@ -229,8 +230,9 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
-            store.MarkCompleted(jobId);
+            var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+            Assert.NotNull(runningJob);
+            store.MarkCompleted(jobId, runningJob.CurrentStateChangeId);
         });
         using var client = factory.CreateClient();
 

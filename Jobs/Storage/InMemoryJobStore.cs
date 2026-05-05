@@ -81,11 +81,13 @@ public sealed class InMemoryJobStore : IJobStore
         return null;
     }
 
-    public bool MarkCompleted(Guid id)
+    public bool MarkCompleted(Guid id, Guid expectedCurrentStateChangeId)
     {
         lock (_lock)
         {
-            if (!_jobsById.TryGetValue(id, out var job) || job.Status != JobStatus.Running)
+            if (!_jobsById.TryGetValue(id, out var job)
+                || job.Status != JobStatus.Running
+                || job.CurrentStateChangeId != expectedCurrentStateChangeId)
             {
                 return false;
             }
@@ -95,26 +97,7 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
-    public bool MarkFailed(Guid id, string reason)
-    {
-        if (string.IsNullOrWhiteSpace(reason))
-        {
-            return false;
-        }
-
-        lock (_lock)
-        {
-            if (!_jobsById.TryGetValue(id, out var job) || job.Status != JobStatus.Running)
-            {
-                return false;
-            }
-
-            _jobsById[id] = job.TransitionToFailed(reason, DateTimeOffset.UtcNow);
-            return true;
-        }
-    }
-
-    public bool ScheduleRetry(Guid id, string reason, DateTimeOffset scheduledAt)
+    public bool MarkFailed(Guid id, Guid expectedCurrentStateChangeId, string reason)
     {
         if (string.IsNullOrWhiteSpace(reason))
         {
@@ -125,6 +108,32 @@ public sealed class InMemoryJobStore : IJobStore
         {
             if (!_jobsById.TryGetValue(id, out var job)
                 || job.Status != JobStatus.Running
+                || job.CurrentStateChangeId != expectedCurrentStateChangeId)
+            {
+                return false;
+            }
+
+            _jobsById[id] = job.TransitionToFailed(reason, DateTimeOffset.UtcNow);
+            return true;
+        }
+    }
+
+    public bool ScheduleRetry(
+        Guid id,
+        Guid expectedCurrentStateChangeId,
+        string reason,
+        DateTimeOffset scheduledAt)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return false;
+        }
+
+        lock (_lock)
+        {
+            if (!_jobsById.TryGetValue(id, out var job)
+                || job.Status != JobStatus.Running
+                || job.CurrentStateChangeId != expectedCurrentStateChangeId
                 || job.AttemptCount >= job.MaxAttempts)
             {
                 return false;

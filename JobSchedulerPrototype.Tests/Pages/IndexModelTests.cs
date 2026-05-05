@@ -19,10 +19,12 @@ public sealed class IndexModelTests
         store.Add(completedJob);
         store.Add(failedJob);
         store.Add(scheduledJob);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
-        store.MarkCompleted(completedJob.Id);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
-        store.MarkFailed(failedJob.Id, "SMTP server unavailable.");
+        var completedRunningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        Assert.NotNull(completedRunningJob);
+        store.MarkCompleted(completedJob.Id, completedRunningJob.CurrentStateChangeId);
+        var failedRunningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        Assert.NotNull(failedRunningJob);
+        store.MarkFailed(failedJob.Id, failedRunningJob.CurrentStateChangeId, "SMTP server unavailable.");
         var model = new IndexModel(store);
 
         model.OnGet();

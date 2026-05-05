@@ -143,6 +143,29 @@ public sealed class JobLifecycleServiceTests
         Assert.Equal(JobStatus.Failed, store.Get(job.Id)?.Status);
     }
 
+    [Fact]
+    public void CompleteExecutionReportsLeaseLostWhenClaimTokenIsStale()
+    {
+        var store = new InMemoryJobStore();
+        var lifecycle = CreateLifecycle(store);
+        var job = RunningJob(store);
+        Assert.NotNull(job.LeaseExpiresAt);
+        var reclaimedJob = store.TryClaimNextDueJob(
+            job.LeaseExpiresAt.Value,
+            "worker-2",
+            job.LeaseExpiresAt.Value.AddMinutes(1));
+        Assert.NotNull(reclaimedJob);
+
+        var completion = lifecycle.CompleteExecution(job, JobExecutionResult.Success());
+
+        Assert.Equal(JobExecutionCompletionStatus.LeaseLost, completion.Status);
+        var persistedJob = store.Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal(JobStatus.Running, persistedJob.Status);
+        Assert.Equal("worker-2", persistedJob.ClaimedBy);
+        Assert.Equal(reclaimedJob.CurrentStateChangeId, persistedJob.CurrentStateChangeId);
+    }
+
     private static JobRecord RunningJob(InMemoryJobStore store, int maxAttempts = 3)
     {
         var job = JobRecord.Enqueue(
