@@ -158,6 +158,56 @@ public sealed class JobRecordTests
     }
 
     [Fact]
+    public void ReclaimExpiredLeaseAppendsRunningHistoryWithNewWorkerId()
+    {
+        var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);
+        var firstClaimedAt = enqueuedAt.AddSeconds(5);
+        var firstLeaseExpiresAt = firstClaimedAt.AddMinutes(1);
+        var reclaimedAt = firstLeaseExpiresAt;
+        var secondLeaseExpiresAt = reclaimedAt.AddMinutes(1);
+        var job = JobRecord.Enqueue(
+            Guid.NewGuid(),
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            enqueuedAt)
+            .Claim("worker-1", firstClaimedAt, firstLeaseExpiresAt);
+
+        var reclaimedJob = job.ReclaimExpiredLease("worker-2", reclaimedAt, secondLeaseExpiresAt);
+
+        Assert.Equal(JobStatus.Running, reclaimedJob.Status);
+        Assert.Equal("worker-2", reclaimedJob.ClaimedBy);
+        Assert.Equal(reclaimedAt, reclaimedJob.ClaimedAt);
+        Assert.Equal(secondLeaseExpiresAt, reclaimedJob.LeaseExpiresAt);
+        Assert.Equal(2, reclaimedJob.AttemptCount);
+        Assert.Equal(
+            [JobStatus.Queued, JobStatus.Running, JobStatus.Running],
+            reclaimedJob.History.Select(change => change.Status));
+        Assert.Equal(reclaimedJob.History[^1].Id, reclaimedJob.CurrentStateChangeId);
+        Assert.Equal("Worker worker-2 reclaimed expired lease.", reclaimedJob.History[^1].Reason);
+    }
+
+    [Fact]
+    public void ReclaimExpiredLeaseRejectsActiveLease()
+    {
+        var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);
+        var claimedAt = enqueuedAt.AddSeconds(5);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var job = JobRecord.Enqueue(
+            Guid.NewGuid(),
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            enqueuedAt)
+            .Claim("worker-1", claimedAt, leaseExpiresAt);
+
+        Assert.Throws<InvalidOperationException>(() => job.ReclaimExpiredLease(
+            "worker-2",
+            leaseExpiresAt.AddTicks(-1),
+            leaseExpiresAt.AddMinutes(1)));
+    }
+
+    [Fact]
     public void TransitionToFailedAppendsHistoryAndCapturesReason()
     {
         var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);

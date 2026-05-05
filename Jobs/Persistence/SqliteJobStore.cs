@@ -49,10 +49,14 @@ public sealed class SqliteJobStore : IJobStore
         using var transaction = db.Database.BeginTransaction();
 
         var jobId = db.Jobs
-            .Where(job => job.RunAt != null
-                && job.RunAt <= now
-                && (job.Status == JobStatus.Queued || job.Status == JobStatus.Scheduled))
-            .OrderBy(job => job.RunAt)
+            .Where(job =>
+                (job.RunAt != null
+                    && job.RunAt <= now
+                    && (job.Status == JobStatus.Queued || job.Status == JobStatus.Scheduled))
+                || (job.Status == JobStatus.Running
+                    && job.LeaseExpiresAt != null
+                    && job.LeaseExpiresAt <= now))
+            .OrderBy(job => job.Status == JobStatus.Running ? job.LeaseExpiresAt : job.RunAt)
             .ThenBy(job => job.Id)
             .Select(job => (Guid?)job.Id)
             .FirstOrDefault();
@@ -70,7 +74,38 @@ public sealed class SqliteJobStore : IJobStore
         }
 
         var originalStatus = job.Status;
+        var originalCurrentStateChangeId = job.CurrentStateChangeId;
         var originalHistoryCount = job.History.Count;
+
+        if (job.Status == JobStatus.Running)
+        {
+            var reclaimedJob = job.ReclaimExpiredLease(workerId, now, leaseExpiresAt);
+            var reclaimRowsUpdated = db.Jobs
+                .Where(existingJob => existingJob.Id == reclaimedJob.Id
+                    && existingJob.Status == JobStatus.Running
+                    && existingJob.CurrentStateChangeId == originalCurrentStateChangeId)
+                .ExecuteUpdate(setters => setters
+                    .SetProperty(existingJob => existingJob.CurrentStateChangeId, reclaimedJob.CurrentStateChangeId)
+                    .SetProperty(existingJob => existingJob.ClaimedBy, reclaimedJob.ClaimedBy)
+                    .SetProperty(existingJob => existingJob.ClaimedAt, reclaimedJob.ClaimedAt)
+                    .SetProperty(existingJob => existingJob.LeaseExpiresAt, reclaimedJob.LeaseExpiresAt));
+
+            if (reclaimRowsUpdated == 0)
+            {
+                transaction.Rollback();
+                return null;
+            }
+
+            AppendStateChanges(
+                db,
+                reclaimedJob.Id,
+                reclaimedJob.History.Skip(originalHistoryCount));
+
+            db.SaveChanges();
+            transaction.Commit();
+
+            return LoadJob(db, reclaimedJob.Id);
+        }
 
         if (job.Status == JobStatus.Scheduled)
         {
@@ -86,7 +121,8 @@ public sealed class SqliteJobStore : IJobStore
         var runningJob = job.Claim(workerId, now, leaseExpiresAt);
         var rowsUpdated = db.Jobs
             .Where(existingJob => existingJob.Id == runningJob.Id
-                && existingJob.Status == originalStatus)
+                && existingJob.Status == originalStatus
+                && existingJob.CurrentStateChangeId == originalCurrentStateChangeId)
             .ExecuteUpdate(setters => setters
                 .SetProperty(existingJob => existingJob.Status, JobStatus.Running)
                 .SetProperty(existingJob => existingJob.CurrentStateChangeId, runningJob.CurrentStateChangeId)

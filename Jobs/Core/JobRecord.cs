@@ -189,6 +189,52 @@ public sealed record JobRecord
             [.. History, stateChange]);
     }
 
+    public JobRecord ReclaimExpiredLease(
+        string workerId,
+        DateTimeOffset claimedAt,
+        DateTimeOffset leaseExpiresAt)
+    {
+        if (Status != JobStatus.Running)
+        {
+            throw new InvalidOperationException("Only running jobs can have an expired lease reclaimed.");
+        }
+
+        if (LeaseExpiresAt is null || LeaseExpiresAt > claimedAt)
+        {
+            throw new InvalidOperationException("Only expired job leases can be reclaimed.");
+        }
+
+        if (string.IsNullOrWhiteSpace(workerId))
+        {
+            throw new ArgumentException("Worker ID is required.", nameof(workerId));
+        }
+
+        if (leaseExpiresAt <= claimedAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(leaseExpiresAt),
+                "Lease expiry must be after the claim time.");
+        }
+
+        var stateChange = JobStateChange.Running(
+            claimedAt,
+            $"Worker {workerId} reclaimed expired lease.");
+
+        return new JobRecord(
+            Id,
+            Type,
+            Payload,
+            JobStatus.Running,
+            stateChange.Id,
+            runAt: null,
+            claimedBy: workerId,
+            claimedAt,
+            leaseExpiresAt,
+            MaxAttempts,
+            FailureReason,
+            [.. History, stateChange]);
+    }
+
     public JobRecord ScheduleRetry(
         string failureReason,
         DateTimeOffset failedAt,

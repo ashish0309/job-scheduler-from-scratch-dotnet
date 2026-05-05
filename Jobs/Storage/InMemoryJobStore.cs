@@ -44,20 +44,22 @@ public sealed class InMemoryJobStore : IJobStore
     {
         lock (_lock)
         {
-            while (_pendingJobs.Min is { } nextJob)
+            while (NextDuePendingOrExpiredRunningJob(now) is { } nextJob)
             {
-                if (nextJob.RunAt > now)
-                {
-                    return null;
-                }
-
-                _pendingJobs.Remove(nextJob);
-
                 if (!_jobsById.TryGetValue(nextJob.JobId, out var job))
                 {
                     throw new InvalidOperationException(
                         $"Pending job index contains missing job '{nextJob.JobId}'.");
                 }
+
+                if (job.Status == JobStatus.Running)
+                {
+                    var reclaimedJob = job.ReclaimExpiredLease(workerId, now, leaseExpiresAt);
+                    _jobsById[job.Id] = reclaimedJob;
+                    return reclaimedJob;
+                }
+
+                _pendingJobs.Remove(nextJob);
 
                 if (job.Status == JobStatus.Scheduled)
                 {
@@ -143,5 +145,34 @@ public sealed class InMemoryJobStore : IJobStore
         }
 
         _pendingJobs.Add(JobQueueEntry.From(job, addedAt));
+    }
+
+    private JobQueueEntry? NextDuePendingOrExpiredRunningJob(DateTimeOffset now)
+    {
+        var nextPendingJob = _pendingJobs.Min is { } pendingJob && pendingJob.RunAt <= now
+            ? pendingJob
+            : null;
+        var nextExpiredRunningJob = _jobsById.Values
+            .Where(job => job.Status == JobStatus.Running
+                && job.LeaseExpiresAt is not null
+                && job.LeaseExpiresAt <= now)
+            .OrderBy(job => job.LeaseExpiresAt)
+            .ThenBy(job => job.Id)
+            .Select(job => new JobQueueEntry(job.LeaseExpiresAt!.Value, job.ClaimedAt ?? job.EnqueuedAt, job.Id))
+            .FirstOrDefault();
+
+        if (nextPendingJob is null)
+        {
+            return nextExpiredRunningJob;
+        }
+
+        if (nextExpiredRunningJob is null)
+        {
+            return nextPendingJob;
+        }
+
+        return nextPendingJob.CompareTo(nextExpiredRunningJob) <= 0
+            ? nextPendingJob
+            : nextExpiredRunningJob;
     }
 }

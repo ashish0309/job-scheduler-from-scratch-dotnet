@@ -61,6 +61,32 @@ public sealed class InMemoryJobStoreTests
     }
 
     [Fact]
+    public void TryClaimNextDueJobReclaimsExpiredRunningJob()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var reclaimedAt = leaseExpiresAt;
+        var newLeaseExpiresAt = reclaimedAt.AddMinutes(1);
+        store.Add(job);
+        store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+
+        var reclaimedJob = store.TryClaimNextDueJob(reclaimedAt, "worker-2", newLeaseExpiresAt);
+
+        Assert.NotNull(reclaimedJob);
+        Assert.Equal(job.Id, reclaimedJob.Id);
+        Assert.Equal(JobStatus.Running, reclaimedJob.Status);
+        Assert.Equal("worker-2", reclaimedJob.ClaimedBy);
+        Assert.Equal(reclaimedAt, reclaimedJob.ClaimedAt);
+        Assert.Equal(newLeaseExpiresAt, reclaimedJob.LeaseExpiresAt);
+        Assert.Equal(
+            [JobStatus.Queued, JobStatus.Running, JobStatus.Running],
+            reclaimedJob.History.Select(change => change.Status));
+        Assert.Equal("Worker worker-2 reclaimed expired lease.", reclaimedJob.History[^1].Reason);
+    }
+
+    [Fact]
     public void TryClaimNextDueJobDoesNotClaimScheduledJobBeforeRunAt()
     {
         var store = new InMemoryJobStore();

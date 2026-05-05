@@ -132,6 +132,56 @@ public sealed class SqliteJobStoreTests
     }
 
     [Fact]
+    public async Task TryClaimNextDueJobReclaimsExpiredRunningJob()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var reclaimedAt = leaseExpiresAt;
+        var newLeaseExpiresAt = reclaimedAt.AddMinutes(1);
+        store.Add(job);
+        store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+
+        var reclaimedJob = store.TryClaimNextDueJob(reclaimedAt, "worker-2", newLeaseExpiresAt);
+
+        Assert.NotNull(reclaimedJob);
+        Assert.Equal(job.Id, reclaimedJob.Id);
+        Assert.Equal(JobStatus.Running, reclaimedJob.Status);
+        Assert.Equal("worker-2", reclaimedJob.ClaimedBy);
+        Assert.Equal(reclaimedAt, reclaimedJob.ClaimedAt);
+        Assert.Equal(newLeaseExpiresAt, reclaimedJob.LeaseExpiresAt);
+        Assert.Equal(
+            [JobStatus.Queued, JobStatus.Running, JobStatus.Running],
+            reclaimedJob.History.Select(change => change.Status));
+        Assert.Equal("Worker worker-2 reclaimed expired lease.", reclaimedJob.History[^1].Reason);
+    }
+
+    [Fact]
+    public async Task TryClaimNextDueJobDoesNotReclaimRunningJobBeforeLeaseExpires()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        store.Add(job);
+        store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+
+        var reclaimedJob = store.TryClaimNextDueJob(
+            leaseExpiresAt.AddTicks(-1),
+            "worker-2",
+            leaseExpiresAt.AddMinutes(1));
+
+        Assert.Null(reclaimedJob);
+        var persistedJob = database.CreateStore().Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal("worker-1", persistedJob.ClaimedBy);
+        Assert.Equal(leaseExpiresAt, persistedJob.LeaseExpiresAt);
+    }
+
+    [Fact]
     public async Task MarkCompletedCompletesRunningJob()
     {
         await using var database = await SqliteJobStoreDatabase.CreateAsync();
@@ -252,6 +302,43 @@ public sealed class SqliteJobStoreTests
         {
             Assert.Equal(JobStatus.Running, database.CreateStore().Get(job.Id)?.Status);
         }
+    }
+
+    [Fact]
+    public async Task TryClaimNextDueJobReclaimsExpiredRunningJobOnceAcrossConcurrentWorkers()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateFileBackedAsync();
+        var job = CreateJob();
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var reclaimedAt = leaseExpiresAt;
+        database.CreateStore().Add(job);
+        database.CreateStore().TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
+
+        var claimedJobs = new ConcurrentBag<JobRecord>();
+        var workers = Enumerable
+            .Range(0, 8)
+            .Select(index => Task.Run(() =>
+            {
+                var claimedJob = database.CreateStore().TryClaimNextDueJob(
+                    reclaimedAt,
+                    $"worker-{index + 2}",
+                    reclaimedAt.AddMinutes(1));
+
+                if (claimedJob is not null)
+                {
+                    claimedJobs.Add(claimedJob);
+                }
+            }));
+
+        await Task.WhenAll(workers);
+
+        var reclaimedJob = Assert.Single(claimedJobs);
+        Assert.Equal(job.Id, reclaimedJob.Id);
+        Assert.StartsWith("worker-", reclaimedJob.ClaimedBy);
+        Assert.Equal(
+            [JobStatus.Queued, JobStatus.Running, JobStatus.Running],
+            database.CreateStore().Get(job.Id)?.History.Select(change => change.Status));
     }
 
     private static JobRecord CreateJob(DateTimeOffset? enqueuedAt = null, int maxAttempts = 3)
