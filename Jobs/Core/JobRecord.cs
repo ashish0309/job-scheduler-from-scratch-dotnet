@@ -53,7 +53,9 @@ public sealed record JobRecord
         CurrentStateChangeId = currentStateChangeId;
         MaxAttempts = maxAttempts;
         FailureReason = failureReason;
-        _history = history.ToList();
+        _history = history
+            .Select((change, index) => change.WithSequence(index + 1))
+            .ToList();
     }
 
     public static JobRecord Enqueue(
@@ -167,6 +169,23 @@ public sealed record JobRecord
     public DateTimeOffset QueuedAt()
     {
         return EnqueuedAt;
+    }
+
+    internal JobRecord WithOrderedHistory()
+    {
+        return new JobRecord(
+            Id,
+            Type,
+            Payload,
+            Status,
+            CurrentStateChangeId,
+            MaxAttempts,
+            FailureReason,
+            History
+                .OrderBy(change => change.Sequence)
+                .ThenBy(change => change.ChangedAt)
+                .ThenBy(change => change.Id)
+                .ToArray());
     }
 
     private DateTimeOffset? ChangedAt(JobStatus status)

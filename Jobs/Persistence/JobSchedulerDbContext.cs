@@ -76,9 +76,12 @@ public sealed class JobSchedulerDbContext : DbContext
                 .IsRequired()
                 .HasMaxLength(1000);
 
+            stateChange.Property(entity => entity.Sequence)
+                .IsRequired();
+
             stateChange.Ignore(entity => entity.Details);
 
-            stateChange.HasIndex("JobId", nameof(JobStateChange.ChangedAt));
+            stateChange.HasIndex("JobId", nameof(JobStateChange.Sequence));
         });
     }
 }

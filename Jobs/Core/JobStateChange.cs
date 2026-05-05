@@ -12,13 +12,15 @@ public sealed record JobStateChange
         JobStatus status,
         DateTimeOffset changedAt,
         string reason,
-        DateTimeOffset? scheduledAt)
+        DateTimeOffset? scheduledAt,
+        int sequence)
     {
         Id = id;
         Status = status;
         ChangedAt = changedAt;
         Reason = reason;
         ScheduledAt = scheduledAt;
+        Sequence = sequence;
     }
 
     public Guid Id { get; }
@@ -28,6 +30,8 @@ public sealed record JobStateChange
     public DateTimeOffset ChangedAt { get; }
 
     public string Reason { get; }
+
+    public int Sequence { get; private init; }
 
     public JobStateDetails Details => ScheduledAt is { } scheduledAt
         ? new ScheduledJobStateDetails(scheduledAt)
@@ -78,6 +82,12 @@ public sealed record JobStateChange
             status,
             changedAt,
             reason,
-            scheduledAt);
+            scheduledAt,
+            sequence: 0);
+    }
+
+    internal JobStateChange WithSequence(int sequence)
+    {
+        return this with { Sequence = sequence };
     }
 }

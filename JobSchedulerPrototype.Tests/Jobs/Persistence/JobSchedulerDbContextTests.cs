@@ -41,6 +41,7 @@ public sealed class JobSchedulerDbContextTests
         Assert.Equal(
             1000,
             stateChangeEntity.FindProperty(nameof(JobStateChange.Reason))?.GetMaxLength());
+        Assert.False(stateChangeEntity.FindProperty(nameof(JobStateChange.Sequence))?.IsNullable);
     }
 
     [Fact]
@@ -86,11 +87,11 @@ public sealed class JobSchedulerDbContextTests
                 persistedJob.Payload.GetRawText());
 
             var history = persistedJob.History
-                .OrderBy(change => change.ChangedAt)
-                .ThenBy(change => change.Id)
+                .OrderBy(change => change.Sequence)
                 .ToArray();
             var stateChange = Assert.Single(history);
             Assert.Equal(JobStatus.Scheduled, stateChange.Status);
+            Assert.Equal(1, stateChange.Sequence);
             Assert.Equal("Job scheduled.", stateChange.Reason);
             Assert.Equal(scheduledAt, stateChange.ScheduledAt);
             Assert.IsType<ScheduledJobStateDetails>(stateChange.Details);
