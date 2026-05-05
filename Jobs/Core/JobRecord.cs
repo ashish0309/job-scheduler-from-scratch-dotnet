@@ -14,6 +14,7 @@ public sealed record JobRecord
     public DateTimeOffset? RunAt { get; private init; }
     public string? ClaimedBy { get; private init; }
     public DateTimeOffset? ClaimedAt { get; private init; }
+    public DateTimeOffset? LeaseExpiresAt { get; private init; }
     public int MaxAttempts { get; private init; }
     public string? FailureReason { get; private init; }
     public IReadOnlyList<JobStateChange> History => _history;
@@ -48,6 +49,7 @@ public sealed record JobRecord
         DateTimeOffset? runAt,
         string? claimedBy,
         DateTimeOffset? claimedAt,
+        DateTimeOffset? leaseExpiresAt,
         int maxAttempts,
         string? failureReason,
         IReadOnlyList<JobStateChange> history)
@@ -60,6 +62,7 @@ public sealed record JobRecord
         RunAt = runAt;
         ClaimedBy = claimedBy;
         ClaimedAt = claimedAt;
+        LeaseExpiresAt = leaseExpiresAt;
         MaxAttempts = maxAttempts;
         FailureReason = failureReason;
         _history = history
@@ -92,6 +95,7 @@ public sealed record JobRecord
             enqueuedAt,
             claimedBy: null,
             claimedAt: null,
+            leaseExpiresAt: null,
             maxAttempts,
             failureReason: null,
             [queuedChange]);
@@ -124,6 +128,7 @@ public sealed record JobRecord
             scheduledAt,
             claimedBy: null,
             claimedAt: null,
+            leaseExpiresAt: null,
             maxAttempts,
             failureReason: null,
             [scheduledChange]);
@@ -142,16 +147,27 @@ public sealed record JobRecord
             RunAtFor(nextStatus, changedAt),
             claimedBy: null,
             claimedAt: null,
+            leaseExpiresAt: null,
             MaxAttempts,
             FailureReason,
             [.. History, stateChange]);
     }
 
-    public JobRecord Claim(string workerId, DateTimeOffset claimedAt)
+    public JobRecord Claim(
+        string workerId,
+        DateTimeOffset claimedAt,
+        DateTimeOffset leaseExpiresAt)
     {
         if (string.IsNullOrWhiteSpace(workerId))
         {
             throw new ArgumentException("Worker ID is required.", nameof(workerId));
+        }
+
+        if (leaseExpiresAt <= claimedAt)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(leaseExpiresAt),
+                "Lease expiry must be after the claim time.");
         }
 
         var stateChange = JobStateChange.Running(
@@ -167,6 +183,7 @@ public sealed record JobRecord
             runAt: null,
             claimedBy: workerId,
             claimedAt,
+            leaseExpiresAt,
             MaxAttempts,
             FailureReason,
             [.. History, stateChange]);
@@ -192,6 +209,7 @@ public sealed record JobRecord
             scheduledAt,
             claimedBy: null,
             claimedAt: null,
+            leaseExpiresAt: null,
             MaxAttempts,
             failureReason,
             [.. History, failedChange, scheduledChange]);
@@ -210,6 +228,7 @@ public sealed record JobRecord
             runAt: null,
             claimedBy: null,
             claimedAt: null,
+            leaseExpiresAt: null,
             MaxAttempts,
             reason,
             [.. History, stateChange]);
@@ -231,6 +250,7 @@ public sealed record JobRecord
             RunAt,
             ClaimedBy,
             ClaimedAt,
+            LeaseExpiresAt,
             MaxAttempts,
             FailureReason,
             History

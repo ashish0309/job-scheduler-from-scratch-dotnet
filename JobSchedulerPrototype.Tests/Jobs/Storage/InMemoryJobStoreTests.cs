@@ -26,16 +26,19 @@ public sealed class InMemoryJobStoreTests
         var store = new InMemoryJobStore();
         var earlierJob = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
         var laterJob = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 1, 0, TimeSpan.Zero));
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
         store.Add(laterJob);
         store.Add(earlierJob);
 
-        var claimedJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        var claimedJob = store.TryClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
 
         Assert.NotNull(claimedJob);
         Assert.Equal(earlierJob.Id, claimedJob.Id);
         Assert.Equal(JobStatus.Running, claimedJob.Status);
         Assert.Equal("worker-1", claimedJob.ClaimedBy);
-        Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), claimedJob.ClaimedAt);
+        Assert.Equal(claimedAt, claimedJob.ClaimedAt);
+        Assert.Equal(leaseExpiresAt, claimedJob.LeaseExpiresAt);
         Assert.Equal(claimedJob.History[^1].Id, claimedJob.CurrentStateChangeId);
         Assert.Equal([JobStatus.Queued, JobStatus.Running], claimedJob.History.Select(change => change.Status));
         Assert.Equal("Worker worker-1 claimed job.", claimedJob.History[^1].Reason);
@@ -50,8 +53,8 @@ public sealed class InMemoryJobStoreTests
         var job = CreateJob();
         store.Add(job);
 
-        var firstClaim = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
-        var secondClaim = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        var firstClaim = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
+        var secondClaim = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
 
         Assert.NotNull(firstClaim);
         Assert.Null(secondClaim);
@@ -65,7 +68,7 @@ public sealed class InMemoryJobStoreTests
         var job = CreateScheduledJob(scheduledAt);
         store.Add(job);
 
-        var claimedJob = store.TryClaimNextDueJob(scheduledAt.AddTicks(-1), "worker-1");
+        var claimedJob = store.TryClaimNextDueJob(scheduledAt.AddTicks(-1), "worker-1", (scheduledAt.AddTicks(-1)).AddMinutes(1));
 
         Assert.Null(claimedJob);
         Assert.Equal(JobStatus.Scheduled, store.Get(job.Id)?.Status);
@@ -79,13 +82,14 @@ public sealed class InMemoryJobStoreTests
         var job = CreateScheduledJob(scheduledAt);
         store.Add(job);
 
-        var claimedJob = store.TryClaimNextDueJob(scheduledAt, "worker-1");
+        var claimedJob = store.TryClaimNextDueJob(scheduledAt, "worker-1", (scheduledAt).AddMinutes(1));
 
         Assert.NotNull(claimedJob);
         Assert.Equal(job.Id, claimedJob.Id);
         Assert.Equal(JobStatus.Running, claimedJob.Status);
         Assert.Equal("worker-1", claimedJob.ClaimedBy);
         Assert.Equal(scheduledAt, claimedJob.ClaimedAt);
+        Assert.Equal(scheduledAt.AddMinutes(1), claimedJob.LeaseExpiresAt);
         Assert.Equal(scheduledAt, claimedJob.ScheduledAt);
         Assert.Equal(
             [JobStatus.Scheduled, JobStatus.Queued, JobStatus.Running],
@@ -102,7 +106,7 @@ public sealed class InMemoryJobStoreTests
         store.Add(job);
 
         var queuedCompletion = store.MarkCompleted(job.Id);
-        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
         var runningCompletion = store.MarkCompleted(job.Id);
         var completedJob = store.Get(job.Id);
 
@@ -113,6 +117,7 @@ public sealed class InMemoryJobStoreTests
         Assert.Equal(JobStatus.Completed, completedJob.Status);
         Assert.Null(completedJob.ClaimedBy);
         Assert.Null(completedJob.ClaimedAt);
+        Assert.Null(completedJob.LeaseExpiresAt);
         Assert.Equal(completedJob.History[^1].Id, completedJob.CurrentStateChangeId);
         Assert.Equal("Job completed successfully.", completedJob.History[^1].Reason);
         Assert.Equal(
@@ -138,7 +143,7 @@ public sealed class InMemoryJobStoreTests
         store.Add(job);
 
         var queuedFailure = store.MarkFailed(job.Id, "SMTP server unavailable.");
-        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
         var runningFailure = store.MarkFailed(job.Id, "SMTP server unavailable.");
         var failedJob = store.Get(job.Id);
 
@@ -149,6 +154,7 @@ public sealed class InMemoryJobStoreTests
         Assert.Equal(JobStatus.Failed, failedJob.Status);
         Assert.Null(failedJob.ClaimedBy);
         Assert.Null(failedJob.ClaimedAt);
+        Assert.Null(failedJob.LeaseExpiresAt);
         Assert.Equal(failedJob.History[^1].Id, failedJob.CurrentStateChangeId);
         Assert.Equal("SMTP server unavailable.", failedJob.FailureReason);
         Assert.Equal("SMTP server unavailable.", failedJob.History[^1].Reason);
@@ -163,7 +169,7 @@ public sealed class InMemoryJobStoreTests
         var store = new InMemoryJobStore();
         var job = CreateJob();
         store.Add(job);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
 
         var failed = store.MarkFailed(job.Id, "");
 
@@ -188,7 +194,7 @@ public sealed class InMemoryJobStoreTests
         var job = CreateJob();
         var scheduledAt = new DateTimeOffset(2026, 5, 4, 10, 6, 0, TimeSpan.Zero);
         store.Add(job);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
 
         var scheduled = store.ScheduleRetry(job.Id, "SMTP server unavailable.", scheduledAt);
         var retriedJob = store.Get(job.Id);
@@ -198,18 +204,20 @@ public sealed class InMemoryJobStoreTests
         Assert.Equal(JobStatus.Scheduled, retriedJob.Status);
         Assert.Null(retriedJob.ClaimedBy);
         Assert.Null(retriedJob.ClaimedAt);
+        Assert.Null(retriedJob.LeaseExpiresAt);
         Assert.Equal(scheduledAt, retriedJob.ScheduledAt);
         Assert.Equal("SMTP server unavailable.", retriedJob.FailureReason);
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Failed, JobStatus.Scheduled],
             retriedJob.History.Select(change => change.Status));
 
-        Assert.Null(store.TryClaimNextDueJob(scheduledAt.AddTicks(-1), "worker-1"));
-        var claimedRetry = store.TryClaimNextDueJob(scheduledAt, "worker-1");
+        Assert.Null(store.TryClaimNextDueJob(scheduledAt.AddTicks(-1), "worker-1", (scheduledAt.AddTicks(-1)).AddMinutes(1)));
+        var claimedRetry = store.TryClaimNextDueJob(scheduledAt, "worker-1", (scheduledAt).AddMinutes(1));
 
         Assert.NotNull(claimedRetry);
         Assert.Equal(job.Id, claimedRetry.Id);
         Assert.Equal(JobStatus.Running, claimedRetry.Status);
+        Assert.Equal(scheduledAt.AddMinutes(1), claimedRetry.LeaseExpiresAt);
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Failed, JobStatus.Scheduled, JobStatus.Queued, JobStatus.Running],
             claimedRetry.History.Select(change => change.Status));
@@ -227,7 +235,7 @@ public sealed class InMemoryJobStoreTests
         var scheduledAt = new DateTimeOffset(2026, 5, 4, 10, 6, 0, TimeSpan.Zero);
         store.Add(queuedJob);
         store.Add(exhaustedJob);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
 
         var queuedRetry = store.ScheduleRetry(queuedJob.Id, "SMTP server unavailable.", scheduledAt);
         var exhaustedRetry = store.ScheduleRetry(exhaustedJob.Id, "SMTP server unavailable.", scheduledAt);

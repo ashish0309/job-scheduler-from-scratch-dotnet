@@ -10,10 +10,14 @@ public sealed class JobWorkerOptions
 
     public int SimulatedWorkDurationSeconds { get; set; } = 2;
 
+    public int LeaseSeconds { get; set; } = 60;
+
     public int ValidWorkerCount => Math.Max(1, WorkerCount);
 
     public TimeSpan ValidPollInterval => TimeSpan.FromSeconds(Math.Max(0, PollIntervalSeconds));
 
     public TimeSpan ValidSimulatedWorkDuration =>
         TimeSpan.FromSeconds(Math.Max(0, SimulatedWorkDurationSeconds));
+
+    public TimeSpan ValidLeaseDuration => TimeSpan.FromSeconds(Math.Max(1, LeaseSeconds));
 }

@@ -27,6 +27,7 @@ public sealed class JobRecordTests
         Assert.Equal(enqueuedAt, job.RunAt);
         Assert.Null(job.ClaimedBy);
         Assert.Null(job.ClaimedAt);
+        Assert.Null(job.LeaseExpiresAt);
         Assert.Equal(job.History[^1].Id, job.CurrentStateChangeId);
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
@@ -62,6 +63,7 @@ public sealed class JobRecordTests
         Assert.Equal(scheduledAt, job.RunAt);
         Assert.Null(job.ClaimedBy);
         Assert.Null(job.ClaimedAt);
+        Assert.Null(job.LeaseExpiresAt);
         Assert.Equal(changedAt, job.EnqueuedAt);
         Assert.Equal(job.History[^1].Id, job.CurrentStateChangeId);
 
@@ -94,6 +96,7 @@ public sealed class JobRecordTests
         Assert.Null(completedJob.RunAt);
         Assert.Null(completedJob.ClaimedBy);
         Assert.Null(completedJob.ClaimedAt);
+        Assert.Null(completedJob.LeaseExpiresAt);
         Assert.Equal(completedJob.History[^1].Id, completedJob.CurrentStateChangeId);
         Assert.Equal(1, completedJob.AttemptCount);
         Assert.Equal(enqueuedAt, completedJob.EnqueuedAt);
@@ -121,6 +124,7 @@ public sealed class JobRecordTests
     {
         var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);
         var claimedAt = enqueuedAt.AddSeconds(5);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
         var job = JobRecord.Enqueue(
             Guid.NewGuid(),
             "send-welcome-email",
@@ -128,14 +132,29 @@ public sealed class JobRecordTests
             maxAttempts: 3,
             enqueuedAt);
 
-        var claimedJob = job.Claim("worker-2", claimedAt);
+        var claimedJob = job.Claim("worker-2", claimedAt, leaseExpiresAt);
 
         Assert.Equal(JobStatus.Running, claimedJob.Status);
         Assert.Null(claimedJob.RunAt);
         Assert.Equal("worker-2", claimedJob.ClaimedBy);
         Assert.Equal(claimedAt, claimedJob.ClaimedAt);
+        Assert.Equal(leaseExpiresAt, claimedJob.LeaseExpiresAt);
         Assert.Equal(claimedJob.History[^1].Id, claimedJob.CurrentStateChangeId);
         Assert.Equal("Worker worker-2 claimed job.", claimedJob.History[^1].Reason);
+    }
+
+    [Fact]
+    public void ClaimRejectsLeaseExpiryAtOrBeforeClaimTime()
+    {
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 5, TimeSpan.Zero);
+        var job = JobRecord.Enqueue(
+            Guid.NewGuid(),
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => job.Claim("worker-1", claimedAt, claimedAt));
     }
 
     [Fact]
@@ -158,6 +177,7 @@ public sealed class JobRecordTests
         Assert.Null(failedJob.RunAt);
         Assert.Null(failedJob.ClaimedBy);
         Assert.Null(failedJob.ClaimedAt);
+        Assert.Null(failedJob.LeaseExpiresAt);
         Assert.Equal(failedJob.History[^1].Id, failedJob.CurrentStateChangeId);
         Assert.Equal("SMTP server unavailable.", failedJob.FailureReason);
         Assert.Equal(1, failedJob.AttemptCount);
@@ -203,6 +223,7 @@ public sealed class JobRecordTests
         Assert.Equal(scheduledAt, retriedJob.RunAt);
         Assert.Null(retriedJob.ClaimedBy);
         Assert.Null(retriedJob.ClaimedAt);
+        Assert.Null(retriedJob.LeaseExpiresAt);
         Assert.Equal(retriedJob.History[^1].Id, retriedJob.CurrentStateChangeId);
         Assert.Equal("SMTP server unavailable.", retriedJob.FailureReason);
         Assert.Equal(1, retriedJob.AttemptCount);

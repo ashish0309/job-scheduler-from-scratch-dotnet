@@ -50,9 +50,12 @@ public sealed class JobLifecycleService : IJobLifecycleService
         return JobEnqueueResult.Success(job);
     }
 
-    public JobRecord? ClaimNextDueJob(DateTimeOffset now, string workerId)
+    public JobRecord? ClaimNextDueJob(
+        DateTimeOffset now,
+        string workerId,
+        DateTimeOffset leaseExpiresAt)
     {
-        return _jobs.TryClaimNextDueJob(now, workerId);
+        return _jobs.TryClaimNextDueJob(now, workerId, leaseExpiresAt);
     }
 
     public JobExecutionCompletion CompleteExecution(

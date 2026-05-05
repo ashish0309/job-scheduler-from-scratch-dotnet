@@ -37,7 +37,10 @@ public sealed class InMemoryJobStore : IJobStore
             .ToArray();
     }
 
-    public JobRecord? TryClaimNextDueJob(DateTimeOffset now, string workerId)
+    public JobRecord? TryClaimNextDueJob(
+        DateTimeOffset now,
+        string workerId,
+        DateTimeOffset leaseExpiresAt)
     {
         lock (_lock)
         {
@@ -67,7 +70,7 @@ public sealed class InMemoryJobStore : IJobStore
                         $"Pending job index contains non-runnable job '{job.Id}' with status '{job.Status}'.");
                 }
 
-                var runningJob = job.Claim(workerId, now);
+                var runningJob = job.Claim(workerId, now, leaseExpiresAt);
                 _jobsById[job.Id] = runningJob;
                 return runningJob;
             }

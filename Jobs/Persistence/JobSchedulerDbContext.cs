@@ -60,6 +60,15 @@ public sealed class JobSchedulerDbContext : DbContext
                         ? new DateTimeOffset(new DateTime(ticks.Value, DateTimeKind.Utc))
                         : null);
 
+            job.Property(entity => entity.LeaseExpiresAt)
+                .HasConversion(
+                    leaseExpiresAt => leaseExpiresAt.HasValue
+                        ? leaseExpiresAt.Value.UtcDateTime.Ticks
+                        : (long?)null,
+                    ticks => ticks.HasValue
+                        ? new DateTimeOffset(new DateTime(ticks.Value, DateTimeKind.Utc))
+                        : null);
+
             job.Property(entity => entity.FailureReason)
                 .HasMaxLength(1000);
 

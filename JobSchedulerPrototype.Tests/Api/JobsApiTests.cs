@@ -40,6 +40,7 @@ public sealed class JobsApiTests
         Assert.Null(body.FailureReason);
         Assert.Null(body.ClaimedBy);
         Assert.Null(body.ClaimedAt);
+        Assert.Null(body.LeaseExpiresAt);
         Assert.Null(body.ScheduledAt);
         Assert.Null(body.StartedAt);
         Assert.Null(body.CompletedAt);
@@ -87,6 +88,7 @@ public sealed class JobsApiTests
         Assert.Null(job.FailureReason);
         Assert.Null(job.ClaimedBy);
         Assert.Null(job.ClaimedAt);
+        Assert.Null(job.LeaseExpiresAt);
         Assert.Null(job.ScheduledAt);
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
@@ -124,6 +126,7 @@ public sealed class JobsApiTests
         Assert.Equal("Scheduled", body.Status);
         Assert.Null(body.ClaimedBy);
         Assert.Null(body.ClaimedAt);
+        Assert.Null(body.LeaseExpiresAt);
         Assert.NotNull(body.ScheduledAt);
         Assert.Null(body.StartedAt);
         var stateChange = Assert.Single(body.History);
@@ -175,7 +178,7 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
             store.MarkFailed(jobId, "SMTP server unavailable.");
         });
         using var client = factory.CreateClient();
@@ -191,6 +194,7 @@ public sealed class JobsApiTests
         Assert.Equal("SMTP server unavailable.", job.FailureReason);
         Assert.Null(job.ClaimedBy);
         Assert.Null(job.ClaimedAt);
+        Assert.Null(job.LeaseExpiresAt);
         Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero), job.EnqueuedAt);
         Assert.Null(job.ScheduledAt);
         Assert.NotNull(job.StartedAt);
@@ -225,7 +229,7 @@ public sealed class JobsApiTests
                 new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
 
             store.Add(job);
-            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+            store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
             store.MarkCompleted(jobId);
         });
         using var client = factory.CreateClient();
@@ -240,6 +244,7 @@ public sealed class JobsApiTests
         Assert.Equal("Completed", job.Status);
         Assert.Null(job.ClaimedBy);
         Assert.Null(job.ClaimedAt);
+        Assert.Null(job.LeaseExpiresAt);
         Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero), job.EnqueuedAt);
         Assert.Null(job.ScheduledAt);
         Assert.NotNull(job.StartedAt);

@@ -8,6 +8,7 @@ public sealed class QueuedJobWorker : IJobWorker
     private readonly IJobDispatcher _dispatcher;
     private readonly ILogger<QueuedJobWorker> _logger;
     private readonly TimeSpan _simulatedWorkDuration;
+    private readonly TimeSpan _leaseDuration;
 
     public QueuedJobWorker(
         IJobLifecycleService lifecycle,
@@ -18,7 +19,8 @@ public sealed class QueuedJobWorker : IJobWorker
             lifecycle,
             dispatcher,
             logger,
-            options.Value.ValidSimulatedWorkDuration)
+            options.Value.ValidSimulatedWorkDuration,
+            options.Value.ValidLeaseDuration)
     {
     }
 
@@ -27,16 +29,28 @@ public sealed class QueuedJobWorker : IJobWorker
         IJobDispatcher dispatcher,
         ILogger<QueuedJobWorker> logger,
         TimeSpan simulatedWorkDuration)
+        : this(lifecycle, dispatcher, logger, simulatedWorkDuration, TimeSpan.FromSeconds(60))
+    {
+    }
+
+    public QueuedJobWorker(
+        IJobLifecycleService lifecycle,
+        IJobDispatcher dispatcher,
+        ILogger<QueuedJobWorker> logger,
+        TimeSpan simulatedWorkDuration,
+        TimeSpan leaseDuration)
     {
         _lifecycle = lifecycle;
         _dispatcher = dispatcher;
         _logger = logger;
         _simulatedWorkDuration = simulatedWorkDuration;
+        _leaseDuration = leaseDuration;
     }
 
     public async Task<bool> ProcessNextJobAsync(string workerId, CancellationToken cancellationToken)
     {
-        var job = _lifecycle.ClaimNextDueJob(DateTimeOffset.UtcNow, workerId);
+        var now = DateTimeOffset.UtcNow;
+        var job = _lifecycle.ClaimNextDueJob(now, workerId, now.Add(_leaseDuration));
         if (job is null)
         {
             return false;

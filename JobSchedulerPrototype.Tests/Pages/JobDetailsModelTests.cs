@@ -19,7 +19,7 @@ public sealed class JobDetailsModelTests
             maxAttempts: 3,
             new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
         store.Add(job);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
         store.MarkCompleted(job.Id);
         var model = new DetailsModel(store);
 
@@ -32,6 +32,7 @@ public sealed class JobDetailsModelTests
         Assert.Equal(JobStatus.Completed, model.Job.Status);
         Assert.Null(model.Job.ClaimedBy);
         Assert.Null(model.Job.ClaimedAt);
+        Assert.Null(model.Job.LeaseExpiresAt);
         Assert.Equal("""{"userId":"user_123","email":"person@example.com"}""", model.Job.Payload);
         Assert.Equal(1, model.Job.AttemptCount);
         Assert.Equal(3, model.Job.MaxAttempts);

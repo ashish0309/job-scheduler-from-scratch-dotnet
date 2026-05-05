@@ -32,6 +32,7 @@ public sealed class JobSchedulerDbContextTests
             200,
             jobEntity.FindProperty(nameof(JobRecord.ClaimedBy))?.GetMaxLength());
         Assert.NotNull(jobEntity.FindProperty(nameof(JobRecord.ClaimedAt)));
+        Assert.NotNull(jobEntity.FindProperty(nameof(JobRecord.LeaseExpiresAt)));
         Assert.NotNull(jobEntity.FindIndex(
             [
                 jobEntity.FindProperty(nameof(JobRecord.Status))!,
@@ -92,6 +93,7 @@ public sealed class JobSchedulerDbContextTests
             Assert.Equal(scheduledAt, persistedJob.RunAt);
             Assert.Null(persistedJob.ClaimedBy);
             Assert.Null(persistedJob.ClaimedAt);
+            Assert.Null(persistedJob.LeaseExpiresAt);
             Assert.Equal(persistedJob.History[^1].Id, persistedJob.CurrentStateChangeId);
             Assert.Equal(3, persistedJob.MaxAttempts);
             Assert.Null(persistedJob.FailureReason);
@@ -133,6 +135,9 @@ public sealed class JobSchedulerDbContextTests
                 await db.Database.GetAppliedMigrationsAsync());
             Assert.Contains(
                 "20260505200107_AddJobClaimOwnership",
+                await db.Database.GetAppliedMigrationsAsync());
+            Assert.Contains(
+                "20260505204411_AddJobLeaseExpiry",
                 await db.Database.GetAppliedMigrationsAsync());
         }
     }

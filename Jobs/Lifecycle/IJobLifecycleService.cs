@@ -6,7 +6,10 @@ public interface IJobLifecycleService
 {
     JobEnqueueResult Enqueue(string type, JsonElement payload, int? delaySeconds);
 
-    JobRecord? ClaimNextDueJob(DateTimeOffset now, string workerId);
+    JobRecord? ClaimNextDueJob(
+        DateTimeOffset now,
+        string workerId,
+        DateTimeOffset leaseExpiresAt);
 
     JobExecutionCompletion CompleteExecution(JobRecord job, JobExecutionResult result);
 }

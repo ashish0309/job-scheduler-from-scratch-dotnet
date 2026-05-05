@@ -19,9 +19,9 @@ public sealed class IndexModelTests
         store.Add(completedJob);
         store.Add(failedJob);
         store.Add(scheduledJob);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
         store.MarkCompleted(completedJob.Id);
-        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1");
+        store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
         store.MarkFailed(failedJob.Id, "SMTP server unavailable.");
         var model = new IndexModel(store);
 
@@ -37,6 +37,7 @@ public sealed class IndexModelTests
         Assert.Equal(JobStatus.Failed, failedSummary.Status);
         Assert.Null(failedSummary.ClaimedBy);
         Assert.Null(failedSummary.ClaimedAt);
+        Assert.Null(failedSummary.LeaseExpiresAt);
         Assert.Equal("SMTP server unavailable.", failedSummary.FailureReason);
         Assert.Equal(failedJob.EnqueuedAt, failedSummary.EnqueuedAt);
         Assert.NotNull(failedSummary.StartedAt);
@@ -58,6 +59,7 @@ public sealed class IndexModelTests
         var queuedSummary = model.Jobs.Single(job => job.Id == queuedJob.Id);
         Assert.Null(queuedSummary.ClaimedBy);
         Assert.Null(queuedSummary.ClaimedAt);
+        Assert.Null(queuedSummary.LeaseExpiresAt);
         Assert.Null(queuedSummary.StartedAt);
         Assert.Null(queuedSummary.CompletedAt);
         Assert.Null(queuedSummary.FailedAt);
@@ -73,6 +75,7 @@ public sealed class IndexModelTests
         Assert.Equal(JobStatus.Completed, completedSummary.Status);
         Assert.Null(completedSummary.ClaimedBy);
         Assert.Null(completedSummary.ClaimedAt);
+        Assert.Null(completedSummary.LeaseExpiresAt);
         Assert.NotNull(completedSummary.StartedAt);
         Assert.NotNull(completedSummary.CompletedAt);
         Assert.Null(completedSummary.FailedAt);
@@ -92,6 +95,7 @@ public sealed class IndexModelTests
         Assert.Equal(JobStatus.Scheduled, scheduledSummary.Status);
         Assert.Null(scheduledSummary.ClaimedBy);
         Assert.Null(scheduledSummary.ClaimedAt);
+        Assert.Null(scheduledSummary.LeaseExpiresAt);
         Assert.Equal(scheduledAt, scheduledSummary.ScheduledAt);
         Assert.Null(scheduledSummary.StartedAt);
         Assert.Empty(scheduledSummary.Attempts);

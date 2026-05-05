@@ -8,7 +8,10 @@ public interface IJobStore
 
     IReadOnlyCollection<JobRecord> List();
 
-    JobRecord? TryClaimNextDueJob(DateTimeOffset now, string workerId);
+    JobRecord? TryClaimNextDueJob(
+        DateTimeOffset now,
+        string workerId,
+        DateTimeOffset leaseExpiresAt);
 
     bool MarkCompleted(Guid id);
 

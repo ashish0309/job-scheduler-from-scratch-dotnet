@@ -77,13 +77,18 @@ public sealed class JobLifecycleServiceTests
             "send-welcome-email",
             Payload(),
             delaySeconds: null);
+        var claimedAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
 
-        var claimedJob = lifecycle.ClaimNextDueJob(DateTimeOffset.UtcNow, "worker-1");
+        var claimedJob = lifecycle.ClaimNextDueJob(claimedAt, "worker-1", leaseExpiresAt);
 
         Assert.NotNull(enqueued.Job);
         Assert.NotNull(claimedJob);
         Assert.Equal(enqueued.Job.Id, claimedJob.Id);
         Assert.Equal(JobStatus.Running, claimedJob.Status);
+        Assert.Equal("worker-1", claimedJob.ClaimedBy);
+        Assert.Equal(claimedAt, claimedJob.ClaimedAt);
+        Assert.Equal(leaseExpiresAt, claimedJob.LeaseExpiresAt);
     }
 
     [Fact]
@@ -147,7 +152,7 @@ public sealed class JobLifecycleServiceTests
             maxAttempts,
             new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
         store.Add(job);
-        return store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 1, 0, TimeSpan.Zero), "worker-1")!;
+        return store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 1, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 1, 0, TimeSpan.Zero)).AddMinutes(1))!;
     }
 
     private static JobLifecycleService CreateLifecycle(IJobStore store)
