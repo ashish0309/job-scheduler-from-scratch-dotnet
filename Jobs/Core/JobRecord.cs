@@ -4,6 +4,8 @@ namespace JobSchedulerPrototype.Jobs;
 
 public sealed record JobRecord
 {
+    private readonly List<JobStateChange> _history = [];
+
     public Guid Id { get; private init; }
     public string Type { get; private init; }
     public JsonElement Payload { get; private init; }
@@ -11,7 +13,7 @@ public sealed record JobRecord
     public Guid CurrentStateChangeId { get; private init; }
     public int MaxAttempts { get; private init; }
     public string? FailureReason { get; private init; }
-    public IReadOnlyList<JobStateChange> History { get; private init; }
+    public IReadOnlyList<JobStateChange> History => _history;
 
     public DateTimeOffset EnqueuedAt => History[0].ChangedAt;
 
@@ -28,6 +30,11 @@ public sealed record JobRecord
     public int AttemptCount => History.Count(change => change.Status == JobStatus.Running);
 
     public IReadOnlyList<JobAttempt> Attempts => BuildAttempts();
+
+    private JobRecord()
+    {
+        Type = string.Empty;
+    }
 
     private JobRecord(
         Guid id,
@@ -46,7 +53,7 @@ public sealed record JobRecord
         CurrentStateChangeId = currentStateChangeId;
         MaxAttempts = maxAttempts;
         FailureReason = failureReason;
-        History = history;
+        _history = history.ToList();
     }
 
     public static JobRecord Enqueue(
@@ -109,12 +116,15 @@ public sealed record JobRecord
     {
         var stateChange = StateChangeFor(nextStatus, changedAt, ReasonFor(nextStatus));
 
-        return this with
-        {
-            Status = nextStatus,
-            CurrentStateChangeId = stateChange.Id,
-            History = [.. History, stateChange]
-        };
+        return new JobRecord(
+            Id,
+            Type,
+            Payload,
+            nextStatus,
+            stateChange.Id,
+            MaxAttempts,
+            FailureReason,
+            [.. History, stateChange]);
     }
 
     public JobRecord ScheduleRetry(
@@ -128,26 +138,30 @@ public sealed record JobRecord
             "Retry scheduled.",
             scheduledAt);
 
-        return this with
-        {
-            Status = JobStatus.Scheduled,
-            CurrentStateChangeId = scheduledChange.Id,
-            FailureReason = failureReason,
-            History = [.. History, failedChange, scheduledChange]
-        };
+        return new JobRecord(
+            Id,
+            Type,
+            Payload,
+            JobStatus.Scheduled,
+            scheduledChange.Id,
+            MaxAttempts,
+            failureReason,
+            [.. History, failedChange, scheduledChange]);
     }
 
     public JobRecord TransitionToFailed(string reason, DateTimeOffset changedAt)
     {
         var stateChange = JobStateChange.Failed(changedAt, reason);
 
-        return this with
-        {
-            Status = JobStatus.Failed,
-            CurrentStateChangeId = stateChange.Id,
-            FailureReason = reason,
-            History = [.. History, stateChange]
-        };
+        return new JobRecord(
+            Id,
+            Type,
+            Payload,
+            JobStatus.Failed,
+            stateChange.Id,
+            MaxAttempts,
+            reason,
+            [.. History, stateChange]);
     }
 
     public DateTimeOffset QueuedAt()
@@ -237,142 +251,3 @@ public sealed record JobRecord
         };
     }
 }
-
-public sealed record JobAttempt(
-    int Number,
-    JobStatus Status,
-    DateTimeOffset StartedAt,
-    DateTimeOffset? CompletedAt,
-    DateTimeOffset? FailedAt,
-    string? FailureReason)
-{
-    public DateTimeOffset? FinishedAt => CompletedAt ?? FailedAt;
-
-    public TimeSpan? Duration => FinishedAt - StartedAt;
-
-    public static JobAttempt Running(int number, DateTimeOffset startedAt)
-    {
-        return new JobAttempt(
-            number,
-            JobStatus.Running,
-            startedAt,
-            CompletedAt: null,
-            FailedAt: null,
-            FailureReason: null);
-    }
-
-    public static JobAttempt Completed(
-        int number,
-        DateTimeOffset startedAt,
-        DateTimeOffset completedAt)
-    {
-        return new JobAttempt(
-            number,
-            JobStatus.Completed,
-            startedAt,
-            completedAt,
-            FailedAt: null,
-            FailureReason: null);
-    }
-
-    public static JobAttempt Failed(
-        int number,
-        DateTimeOffset startedAt,
-        DateTimeOffset failedAt,
-        string failureReason)
-    {
-        return new JobAttempt(
-            number,
-            JobStatus.Failed,
-            startedAt,
-            CompletedAt: null,
-            failedAt,
-            failureReason);
-    }
-}
-
-public sealed record JobStateChange
-{
-    private JobStateChange(
-        Guid id,
-        JobStatus status,
-        DateTimeOffset changedAt,
-        string reason,
-        JobStateDetails details)
-    {
-        Id = id;
-        Status = status;
-        ChangedAt = changedAt;
-        Reason = reason;
-        Details = details;
-    }
-
-    public Guid Id { get; }
-
-    public JobStatus Status { get; }
-
-    public DateTimeOffset ChangedAt { get; }
-
-    public string Reason { get; }
-
-    public JobStateDetails Details { get; }
-
-    public DateTimeOffset? ScheduledAt => Details is ScheduledJobStateDetails details
-        ? details.ScheduledAt
-        : null;
-
-    public static JobStateChange Queued(DateTimeOffset changedAt, string reason)
-    {
-        return Create(JobStatus.Queued, changedAt, reason, JobStateDetails.None);
-    }
-
-    public static JobStateChange Scheduled(
-        DateTimeOffset changedAt,
-        string reason,
-        DateTimeOffset scheduledAt)
-    {
-        return Create(
-            JobStatus.Scheduled,
-            changedAt,
-            reason,
-            new ScheduledJobStateDetails(scheduledAt));
-    }
-
-    public static JobStateChange Running(DateTimeOffset changedAt, string reason)
-    {
-        return Create(JobStatus.Running, changedAt, reason, JobStateDetails.None);
-    }
-
-    public static JobStateChange Completed(DateTimeOffset changedAt, string reason)
-    {
-        return Create(JobStatus.Completed, changedAt, reason, JobStateDetails.None);
-    }
-
-    public static JobStateChange Failed(DateTimeOffset changedAt, string reason)
-    {
-        return Create(JobStatus.Failed, changedAt, reason, JobStateDetails.None);
-    }
-
-    private static JobStateChange Create(
-        JobStatus status,
-        DateTimeOffset changedAt,
-        string reason,
-        JobStateDetails details)
-    {
-        return new JobStateChange(
-            Guid.NewGuid(),
-            status,
-            changedAt,
-            reason,
-            details);
-    }
-}
-
-public abstract record JobStateDetails
-{
-    public static JobStateDetails None { get; } = new EmptyJobStateDetails();
-
-    private sealed record EmptyJobStateDetails : JobStateDetails;
-}
-
-public sealed record ScheduledJobStateDetails(DateTimeOffset ScheduledAt) : JobStateDetails;

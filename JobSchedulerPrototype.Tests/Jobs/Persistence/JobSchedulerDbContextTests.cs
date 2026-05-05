@@ -1,3 +1,4 @@
+using System.Text.Json;
 using JobSchedulerPrototype.Jobs;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -15,31 +16,31 @@ public sealed class JobSchedulerDbContextTests
 
         using var db = new JobSchedulerDbContext(options);
 
-        var jobEntity = db.Model.FindEntityType(typeof(JobEntity));
+        var jobEntity = db.Model.FindEntityType(typeof(JobRecord));
         Assert.NotNull(jobEntity);
-        Assert.False(jobEntity.FindProperty(nameof(JobEntity.Type))?.IsNullable);
+        Assert.False(jobEntity.FindProperty(nameof(JobRecord.Type))?.IsNullable);
         Assert.Equal(
-            JobEntity.TypeMaxLength,
-            jobEntity.FindProperty(nameof(JobEntity.Type))?.GetMaxLength());
-        Assert.False(jobEntity.FindProperty(nameof(JobEntity.PayloadJson))?.IsNullable);
-        Assert.False(jobEntity.FindProperty(nameof(JobEntity.Status))?.IsNullable);
+            200,
+            jobEntity.FindProperty(nameof(JobRecord.Type))?.GetMaxLength());
+        Assert.False(jobEntity.FindProperty(nameof(JobRecord.Payload))?.IsNullable);
+        Assert.False(jobEntity.FindProperty(nameof(JobRecord.Status))?.IsNullable);
         Assert.Equal(
-            JobEntity.StatusMaxLength,
-            jobEntity.FindProperty(nameof(JobEntity.Status))?.GetMaxLength());
+            50,
+            jobEntity.FindProperty(nameof(JobRecord.Status))?.GetMaxLength());
         Assert.Equal(
-            JobEntity.FailureReasonMaxLength,
-            jobEntity.FindProperty(nameof(JobEntity.FailureReason))?.GetMaxLength());
+            1000,
+            jobEntity.FindProperty(nameof(JobRecord.FailureReason))?.GetMaxLength());
 
-        var stateChangeEntity = db.Model.FindEntityType(typeof(JobStateChangeEntity));
+        var stateChangeEntity = db.Model.FindEntityType(typeof(JobStateChange));
         Assert.NotNull(stateChangeEntity);
-        Assert.False(stateChangeEntity.FindProperty(nameof(JobStateChangeEntity.Status))?.IsNullable);
+        Assert.False(stateChangeEntity.FindProperty(nameof(JobStateChange.Status))?.IsNullable);
         Assert.Equal(
-            JobStateChangeEntity.StatusMaxLength,
-            stateChangeEntity.FindProperty(nameof(JobStateChangeEntity.Status))?.GetMaxLength());
-        Assert.False(stateChangeEntity.FindProperty(nameof(JobStateChangeEntity.Reason))?.IsNullable);
+            50,
+            stateChangeEntity.FindProperty(nameof(JobStateChange.Status))?.GetMaxLength());
+        Assert.False(stateChangeEntity.FindProperty(nameof(JobStateChange.Reason))?.IsNullable);
         Assert.Equal(
-            JobStateChangeEntity.ReasonMaxLength,
-            stateChangeEntity.FindProperty(nameof(JobStateChangeEntity.Reason))?.GetMaxLength());
+            1000,
+            stateChangeEntity.FindProperty(nameof(JobStateChange.Reason))?.GetMaxLength());
     }
 
     [Fact]
@@ -52,73 +53,54 @@ public sealed class JobSchedulerDbContextTests
             .Options;
 
         var jobId = Guid.NewGuid();
-        var queuedChangeId = Guid.NewGuid();
-        var scheduledChangeId = Guid.NewGuid();
         var changedAt = new DateTimeOffset(2026, 5, 5, 10, 0, 0, TimeSpan.Zero);
-        var scheduledChangedAt = changedAt.AddSeconds(1);
         var scheduledAt = changedAt.AddSeconds(30);
+        var job = JobRecord.Schedule(
+            jobId,
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            scheduledAt,
+            changedAt);
 
         await using (var db = new JobSchedulerDbContext(options))
         {
             await db.Database.EnsureCreatedAsync();
-            var job = new JobEntity
-            {
-                Id = jobId,
-                Type = "send-welcome-email",
-                PayloadJson = """{"userId":"user_123","email":"person@example.com"}""",
-                Status = JobStatus.Scheduled,
-                CurrentStateChangeId = scheduledChangeId,
-                MaxAttempts = 3,
-                FailureReason = null
-            };
-            job.History.AddRange(
-            [
-                new JobStateChangeEntity
-                {
-                    Id = queuedChangeId,
-                    Status = JobStatus.Queued,
-                    ChangedAt = changedAt,
-                    Reason = "Job accepted."
-                },
-                new JobStateChangeEntity
-                {
-                    Id = scheduledChangeId,
-                    Status = JobStatus.Scheduled,
-                    ChangedAt = scheduledChangedAt,
-                    Reason = "Job scheduled.",
-                    ScheduledAt = scheduledAt
-                }
-            ]);
             db.Jobs.Add(job);
             await db.SaveChangesAsync();
         }
 
         await using (var db = new JobSchedulerDbContext(options))
         {
-            var job = await db.Jobs
+            var persistedJob = await db.Jobs
                 .Include(entity => entity.History)
                 .SingleAsync(entity => entity.Id == jobId);
 
-            Assert.Equal("send-welcome-email", job.Type);
-            Assert.Equal(JobStatus.Scheduled, job.Status);
-            Assert.Equal(scheduledChangeId, job.CurrentStateChangeId);
-            Assert.Equal(3, job.MaxAttempts);
-            Assert.Null(job.FailureReason);
+            Assert.Equal("send-welcome-email", persistedJob.Type);
+            Assert.Equal(JobStatus.Scheduled, persistedJob.Status);
+            Assert.Equal(persistedJob.History[^1].Id, persistedJob.CurrentStateChangeId);
+            Assert.Equal(3, persistedJob.MaxAttempts);
+            Assert.Null(persistedJob.FailureReason);
             Assert.Equal(
                 """{"userId":"user_123","email":"person@example.com"}""",
-                job.PayloadJson);
+                persistedJob.Payload.GetRawText());
 
-            var history = job.History
+            var history = persistedJob.History
                 .OrderBy(change => change.ChangedAt)
                 .ThenBy(change => change.Id)
                 .ToArray();
-            Assert.Equal(2, history.Length);
-            Assert.Equal(JobStatus.Queued, history[0].Status);
-            Assert.Equal("Job accepted.", history[0].Reason);
-            Assert.Null(history[0].ScheduledAt);
-            Assert.Equal(JobStatus.Scheduled, history[1].Status);
-            Assert.Equal("Job scheduled.", history[1].Reason);
-            Assert.Equal(scheduledAt, history[1].ScheduledAt);
+            var stateChange = Assert.Single(history);
+            Assert.Equal(JobStatus.Scheduled, stateChange.Status);
+            Assert.Equal("Job scheduled.", stateChange.Reason);
+            Assert.Equal(scheduledAt, stateChange.ScheduledAt);
+            Assert.IsType<ScheduledJobStateDetails>(stateChange.Details);
         }
+    }
+
+    private static JsonElement Payload()
+    {
+        using var document = JsonDocument.Parse(
+            """{"userId":"user_123","email":"person@example.com"}""");
+        return document.RootElement.Clone();
     }
 }

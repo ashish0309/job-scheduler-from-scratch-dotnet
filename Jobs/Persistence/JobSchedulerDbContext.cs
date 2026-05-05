@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace JobSchedulerPrototype.Jobs;
 
@@ -9,32 +10,56 @@ public sealed class JobSchedulerDbContext : DbContext
     {
     }
 
-    public DbSet<JobEntity> Jobs => Set<JobEntity>();
+    public DbSet<JobRecord> Jobs => Set<JobRecord>();
 
-    public DbSet<JobStateChangeEntity> JobStateChanges => Set<JobStateChangeEntity>();
+    public DbSet<JobStateChange> JobStateChanges => Set<JobStateChange>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<JobEntity>(job =>
+        modelBuilder.Entity<JobRecord>(job =>
         {
             job.ToTable("Jobs");
             job.HasKey(entity => entity.Id);
 
+            job.Property(entity => entity.Type)
+                .IsRequired()
+                .HasMaxLength(200);
+
+            job.Property(entity => entity.Payload)
+                .HasConversion(
+                    payload => payload.GetRawText(),
+                    json => JsonDocument.Parse(json, default).RootElement.Clone())
+                .IsRequired();
+
             job.Property(entity => entity.Status)
                 .HasConversion<string>()
                 .IsRequired()
-                .HasMaxLength(JobEntity.StatusMaxLength);
+                .HasMaxLength(50);
 
             job.Property(entity => entity.MaxAttempts)
                 .IsRequired();
 
+            job.Property(entity => entity.FailureReason)
+                .HasMaxLength(1000);
+
+            job.Ignore(entity => entity.Attempts);
+            job.Ignore(entity => entity.EnqueuedAt);
+            job.Ignore(entity => entity.ScheduledAt);
+            job.Ignore(entity => entity.StartedAt);
+            job.Ignore(entity => entity.CompletedAt);
+            job.Ignore(entity => entity.FailedAt);
+            job.Ignore(entity => entity.AttemptCount);
+
             job.HasMany(entity => entity.History)
-                .WithOne(entity => entity.Job)
-                .HasForeignKey(entity => entity.JobId)
+                .WithOne()
+                .HasForeignKey("JobId")
                 .OnDelete(DeleteBehavior.Cascade);
+
+            job.Navigation(entity => entity.History)
+                .UsePropertyAccessMode(PropertyAccessMode.Field);
         });
 
-        modelBuilder.Entity<JobStateChangeEntity>(stateChange =>
+        modelBuilder.Entity<JobStateChange>(stateChange =>
         {
             stateChange.ToTable("JobStateChanges");
             stateChange.HasKey(entity => entity.Id);
@@ -42,16 +67,18 @@ public sealed class JobSchedulerDbContext : DbContext
             stateChange.Property(entity => entity.Status)
                 .HasConversion<string>()
                 .IsRequired()
-                .HasMaxLength(JobStateChangeEntity.StatusMaxLength);
+                .HasMaxLength(50);
 
             stateChange.Property(entity => entity.ChangedAt)
                 .IsRequired();
 
-            stateChange.HasIndex(entity => new
-            {
-                entity.JobId,
-                entity.ChangedAt
-            });
+            stateChange.Property(entity => entity.Reason)
+                .IsRequired()
+                .HasMaxLength(1000);
+
+            stateChange.Ignore(entity => entity.Details);
+
+            stateChange.HasIndex("JobId", nameof(JobStateChange.ChangedAt));
         });
     }
 }
