@@ -35,6 +35,8 @@ public sealed class IndexModelTests
 
         var failedSummary = model.Jobs.Single(job => job.Id == failedJob.Id);
         Assert.Equal(JobStatus.Failed, failedSummary.Status);
+        Assert.Null(failedSummary.ClaimedBy);
+        Assert.Null(failedSummary.ClaimedAt);
         Assert.Equal("SMTP server unavailable.", failedSummary.FailureReason);
         Assert.Equal(failedJob.EnqueuedAt, failedSummary.EnqueuedAt);
         Assert.NotNull(failedSummary.StartedAt);
@@ -54,6 +56,8 @@ public sealed class IndexModelTests
         Assert.Equal($"/api/jobs/{failedJob.Id}", failedSummary.StatusUrl);
 
         var queuedSummary = model.Jobs.Single(job => job.Id == queuedJob.Id);
+        Assert.Null(queuedSummary.ClaimedBy);
+        Assert.Null(queuedSummary.ClaimedAt);
         Assert.Null(queuedSummary.StartedAt);
         Assert.Null(queuedSummary.CompletedAt);
         Assert.Null(queuedSummary.FailedAt);
@@ -67,6 +71,8 @@ public sealed class IndexModelTests
 
         var completedSummary = model.Jobs.Single(job => job.Id == completedJob.Id);
         Assert.Equal(JobStatus.Completed, completedSummary.Status);
+        Assert.Null(completedSummary.ClaimedBy);
+        Assert.Null(completedSummary.ClaimedAt);
         Assert.NotNull(completedSummary.StartedAt);
         Assert.NotNull(completedSummary.CompletedAt);
         Assert.Null(completedSummary.FailedAt);
@@ -84,6 +90,8 @@ public sealed class IndexModelTests
 
         var scheduledSummary = model.Jobs.Single(job => job.Id == scheduledJob.Id);
         Assert.Equal(JobStatus.Scheduled, scheduledSummary.Status);
+        Assert.Null(scheduledSummary.ClaimedBy);
+        Assert.Null(scheduledSummary.ClaimedAt);
         Assert.Equal(scheduledAt, scheduledSummary.ScheduledAt);
         Assert.Null(scheduledSummary.StartedAt);
         Assert.Empty(scheduledSummary.Attempts);

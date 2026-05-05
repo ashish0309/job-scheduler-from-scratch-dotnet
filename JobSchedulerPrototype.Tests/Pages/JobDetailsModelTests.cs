@@ -30,6 +30,8 @@ public sealed class JobDetailsModelTests
         Assert.Equal(job.Id, model.Job.Id);
         Assert.Equal("send-welcome-email", model.Job.Type);
         Assert.Equal(JobStatus.Completed, model.Job.Status);
+        Assert.Null(model.Job.ClaimedBy);
+        Assert.Null(model.Job.ClaimedAt);
         Assert.Equal("""{"userId":"user_123","email":"person@example.com"}""", model.Job.Payload);
         Assert.Equal(1, model.Job.AttemptCount);
         Assert.Equal(3, model.Job.MaxAttempts);

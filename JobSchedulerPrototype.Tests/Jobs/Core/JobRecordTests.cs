@@ -25,6 +25,8 @@ public sealed class JobRecordTests
         Assert.Equal(0, job.AttemptCount);
         Assert.Equal(enqueuedAt, job.EnqueuedAt);
         Assert.Equal(enqueuedAt, job.RunAt);
+        Assert.Null(job.ClaimedBy);
+        Assert.Null(job.ClaimedAt);
         Assert.Equal(job.History[^1].Id, job.CurrentStateChangeId);
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
@@ -58,6 +60,8 @@ public sealed class JobRecordTests
         Assert.Equal(JobStatus.Scheduled, job.Status);
         Assert.Equal(scheduledAt, job.ScheduledAt);
         Assert.Equal(scheduledAt, job.RunAt);
+        Assert.Null(job.ClaimedBy);
+        Assert.Null(job.ClaimedAt);
         Assert.Equal(changedAt, job.EnqueuedAt);
         Assert.Equal(job.History[^1].Id, job.CurrentStateChangeId);
 
@@ -88,6 +92,8 @@ public sealed class JobRecordTests
 
         Assert.Equal(JobStatus.Completed, completedJob.Status);
         Assert.Null(completedJob.RunAt);
+        Assert.Null(completedJob.ClaimedBy);
+        Assert.Null(completedJob.ClaimedAt);
         Assert.Equal(completedJob.History[^1].Id, completedJob.CurrentStateChangeId);
         Assert.Equal(1, completedJob.AttemptCount);
         Assert.Equal(enqueuedAt, completedJob.EnqueuedAt);
@@ -126,6 +132,8 @@ public sealed class JobRecordTests
 
         Assert.Equal(JobStatus.Running, claimedJob.Status);
         Assert.Null(claimedJob.RunAt);
+        Assert.Equal("worker-2", claimedJob.ClaimedBy);
+        Assert.Equal(claimedAt, claimedJob.ClaimedAt);
         Assert.Equal(claimedJob.History[^1].Id, claimedJob.CurrentStateChangeId);
         Assert.Equal("Worker worker-2 claimed job.", claimedJob.History[^1].Reason);
     }
@@ -148,6 +156,8 @@ public sealed class JobRecordTests
 
         Assert.Equal(JobStatus.Failed, failedJob.Status);
         Assert.Null(failedJob.RunAt);
+        Assert.Null(failedJob.ClaimedBy);
+        Assert.Null(failedJob.ClaimedAt);
         Assert.Equal(failedJob.History[^1].Id, failedJob.CurrentStateChangeId);
         Assert.Equal("SMTP server unavailable.", failedJob.FailureReason);
         Assert.Equal(1, failedJob.AttemptCount);
@@ -191,6 +201,8 @@ public sealed class JobRecordTests
 
         Assert.Equal(JobStatus.Scheduled, retriedJob.Status);
         Assert.Equal(scheduledAt, retriedJob.RunAt);
+        Assert.Null(retriedJob.ClaimedBy);
+        Assert.Null(retriedJob.ClaimedAt);
         Assert.Equal(retriedJob.History[^1].Id, retriedJob.CurrentStateChangeId);
         Assert.Equal("SMTP server unavailable.", retriedJob.FailureReason);
         Assert.Equal(1, retriedJob.AttemptCount);

@@ -34,6 +34,8 @@ public sealed class InMemoryJobStoreTests
         Assert.NotNull(claimedJob);
         Assert.Equal(earlierJob.Id, claimedJob.Id);
         Assert.Equal(JobStatus.Running, claimedJob.Status);
+        Assert.Equal("worker-1", claimedJob.ClaimedBy);
+        Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), claimedJob.ClaimedAt);
         Assert.Equal(claimedJob.History[^1].Id, claimedJob.CurrentStateChangeId);
         Assert.Equal([JobStatus.Queued, JobStatus.Running], claimedJob.History.Select(change => change.Status));
         Assert.Equal("Worker worker-1 claimed job.", claimedJob.History[^1].Reason);
@@ -82,6 +84,8 @@ public sealed class InMemoryJobStoreTests
         Assert.NotNull(claimedJob);
         Assert.Equal(job.Id, claimedJob.Id);
         Assert.Equal(JobStatus.Running, claimedJob.Status);
+        Assert.Equal("worker-1", claimedJob.ClaimedBy);
+        Assert.Equal(scheduledAt, claimedJob.ClaimedAt);
         Assert.Equal(scheduledAt, claimedJob.ScheduledAt);
         Assert.Equal(
             [JobStatus.Scheduled, JobStatus.Queued, JobStatus.Running],
@@ -107,6 +111,8 @@ public sealed class InMemoryJobStoreTests
         Assert.True(runningCompletion);
         Assert.NotNull(completedJob);
         Assert.Equal(JobStatus.Completed, completedJob.Status);
+        Assert.Null(completedJob.ClaimedBy);
+        Assert.Null(completedJob.ClaimedAt);
         Assert.Equal(completedJob.History[^1].Id, completedJob.CurrentStateChangeId);
         Assert.Equal("Job completed successfully.", completedJob.History[^1].Reason);
         Assert.Equal(
@@ -141,6 +147,8 @@ public sealed class InMemoryJobStoreTests
         Assert.True(runningFailure);
         Assert.NotNull(failedJob);
         Assert.Equal(JobStatus.Failed, failedJob.Status);
+        Assert.Null(failedJob.ClaimedBy);
+        Assert.Null(failedJob.ClaimedAt);
         Assert.Equal(failedJob.History[^1].Id, failedJob.CurrentStateChangeId);
         Assert.Equal("SMTP server unavailable.", failedJob.FailureReason);
         Assert.Equal("SMTP server unavailable.", failedJob.History[^1].Reason);
@@ -188,6 +196,8 @@ public sealed class InMemoryJobStoreTests
         Assert.True(scheduled);
         Assert.NotNull(retriedJob);
         Assert.Equal(JobStatus.Scheduled, retriedJob.Status);
+        Assert.Null(retriedJob.ClaimedBy);
+        Assert.Null(retriedJob.ClaimedAt);
         Assert.Equal(scheduledAt, retriedJob.ScheduledAt);
         Assert.Equal("SMTP server unavailable.", retriedJob.FailureReason);
         Assert.Equal(

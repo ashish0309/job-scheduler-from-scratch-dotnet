@@ -12,6 +12,8 @@ public sealed record JobRecord
     public JobStatus Status { get; private init; }
     public Guid CurrentStateChangeId { get; private init; }
     public DateTimeOffset? RunAt { get; private init; }
+    public string? ClaimedBy { get; private init; }
+    public DateTimeOffset? ClaimedAt { get; private init; }
     public int MaxAttempts { get; private init; }
     public string? FailureReason { get; private init; }
     public IReadOnlyList<JobStateChange> History => _history;
@@ -44,6 +46,8 @@ public sealed record JobRecord
         JobStatus status,
         Guid currentStateChangeId,
         DateTimeOffset? runAt,
+        string? claimedBy,
+        DateTimeOffset? claimedAt,
         int maxAttempts,
         string? failureReason,
         IReadOnlyList<JobStateChange> history)
@@ -54,6 +58,8 @@ public sealed record JobRecord
         Status = status;
         CurrentStateChangeId = currentStateChangeId;
         RunAt = runAt;
+        ClaimedBy = claimedBy;
+        ClaimedAt = claimedAt;
         MaxAttempts = maxAttempts;
         FailureReason = failureReason;
         _history = history
@@ -84,6 +90,8 @@ public sealed record JobRecord
             JobStatus.Queued,
             queuedChange.Id,
             enqueuedAt,
+            claimedBy: null,
+            claimedAt: null,
             maxAttempts,
             failureReason: null,
             [queuedChange]);
@@ -114,6 +122,8 @@ public sealed record JobRecord
             JobStatus.Scheduled,
             scheduledChange.Id,
             scheduledAt,
+            claimedBy: null,
+            claimedAt: null,
             maxAttempts,
             failureReason: null,
             [scheduledChange]);
@@ -130,6 +140,8 @@ public sealed record JobRecord
             nextStatus,
             stateChange.Id,
             RunAtFor(nextStatus, changedAt),
+            claimedBy: null,
+            claimedAt: null,
             MaxAttempts,
             FailureReason,
             [.. History, stateChange]);
@@ -153,6 +165,8 @@ public sealed record JobRecord
             JobStatus.Running,
             stateChange.Id,
             runAt: null,
+            claimedBy: workerId,
+            claimedAt,
             MaxAttempts,
             FailureReason,
             [.. History, stateChange]);
@@ -176,6 +190,8 @@ public sealed record JobRecord
             JobStatus.Scheduled,
             scheduledChange.Id,
             scheduledAt,
+            claimedBy: null,
+            claimedAt: null,
             MaxAttempts,
             failureReason,
             [.. History, failedChange, scheduledChange]);
@@ -192,6 +208,8 @@ public sealed record JobRecord
             JobStatus.Failed,
             stateChange.Id,
             runAt: null,
+            claimedBy: null,
+            claimedAt: null,
             MaxAttempts,
             reason,
             [.. History, stateChange]);
@@ -211,6 +229,8 @@ public sealed record JobRecord
             Status,
             CurrentStateChangeId,
             RunAt,
+            ClaimedBy,
+            ClaimedAt,
             MaxAttempts,
             FailureReason,
             History

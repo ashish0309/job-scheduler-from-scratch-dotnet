@@ -22,6 +22,8 @@ public sealed class SqliteJobStoreTests
         Assert.Equal(job.Id, persistedJob.Id);
         Assert.Equal(JobStatus.Queued, persistedJob.Status);
         Assert.Equal(persistedJob.EnqueuedAt, persistedJob.RunAt);
+        Assert.Null(persistedJob.ClaimedBy);
+        Assert.Null(persistedJob.ClaimedAt);
         Assert.Equal("""{"userId":"user_123"}""", persistedJob.Payload.GetRawText());
         var stateChange = Assert.Single(persistedJob.History);
         Assert.Equal(persistedJob.CurrentStateChangeId, stateChange.Id);
@@ -64,6 +66,8 @@ public sealed class SqliteJobStoreTests
         Assert.Equal(earlierJob.Id, claimedJob.Id);
         Assert.Equal(JobStatus.Running, claimedJob.Status);
         Assert.Null(claimedJob.RunAt);
+        Assert.Equal("worker-1", claimedJob.ClaimedBy);
+        Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), claimedJob.ClaimedAt);
         Assert.Equal([JobStatus.Queued, JobStatus.Running], claimedJob.History.Select(change => change.Status));
         Assert.Equal(initialStateChangeId, claimedJob.History[0].Id);
         Assert.Equal(claimedJob.CurrentStateChangeId, claimedJob.History[^1].Id);
@@ -89,6 +93,8 @@ public sealed class SqliteJobStoreTests
         Assert.Equal(job.Id, dueClaim.Id);
         Assert.Equal(JobStatus.Running, dueClaim.Status);
         Assert.Null(dueClaim.RunAt);
+        Assert.Equal("worker-1", dueClaim.ClaimedBy);
+        Assert.Equal(scheduledAt, dueClaim.ClaimedAt);
         Assert.Equal(
             [JobStatus.Scheduled, JobStatus.Queued, JobStatus.Running],
             dueClaim.History.Select(change => change.Status));
@@ -136,6 +142,8 @@ public sealed class SqliteJobStoreTests
         Assert.NotNull(persistedJob);
         Assert.Equal(JobStatus.Completed, persistedJob.Status);
         Assert.Null(persistedJob.RunAt);
+        Assert.Null(persistedJob.ClaimedBy);
+        Assert.Null(persistedJob.ClaimedAt);
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Completed],
             persistedJob.History.Select(change => change.Status));
@@ -157,6 +165,8 @@ public sealed class SqliteJobStoreTests
         Assert.NotNull(persistedJob);
         Assert.Equal(JobStatus.Failed, persistedJob.Status);
         Assert.Null(persistedJob.RunAt);
+        Assert.Null(persistedJob.ClaimedBy);
+        Assert.Null(persistedJob.ClaimedAt);
         Assert.Equal("SMTP server unavailable.", persistedJob.FailureReason);
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Failed],
@@ -183,6 +193,8 @@ public sealed class SqliteJobStoreTests
         Assert.Equal(job.Id, claimedRetry.Id);
         Assert.Equal(JobStatus.Running, claimedRetry.Status);
         Assert.Null(claimedRetry.RunAt);
+        Assert.Equal("worker-1", claimedRetry.ClaimedBy);
+        Assert.Equal(scheduledAt, claimedRetry.ClaimedAt);
         Assert.Equal(
             [JobStatus.Queued, JobStatus.Running, JobStatus.Failed, JobStatus.Scheduled, JobStatus.Queued, JobStatus.Running],
             claimedRetry.History.Select(change => change.Status));

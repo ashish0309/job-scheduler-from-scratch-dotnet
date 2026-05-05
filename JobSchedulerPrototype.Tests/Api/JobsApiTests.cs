@@ -38,6 +38,8 @@ public sealed class JobsApiTests
         Assert.Equal("send-welcome-email", body.Type);
         Assert.Equal("Queued", body.Status);
         Assert.Null(body.FailureReason);
+        Assert.Null(body.ClaimedBy);
+        Assert.Null(body.ClaimedAt);
         Assert.Null(body.ScheduledAt);
         Assert.Null(body.StartedAt);
         Assert.Null(body.CompletedAt);
@@ -83,6 +85,8 @@ public sealed class JobsApiTests
         Assert.Equal("send-welcome-email", job.Type);
         Assert.Equal("Queued", job.Status);
         Assert.Null(job.FailureReason);
+        Assert.Null(job.ClaimedBy);
+        Assert.Null(job.ClaimedAt);
         Assert.Null(job.ScheduledAt);
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
@@ -118,6 +122,8 @@ public sealed class JobsApiTests
         var body = await response.Content.ReadFromJsonAsync<JobResponse>();
         Assert.NotNull(body);
         Assert.Equal("Scheduled", body.Status);
+        Assert.Null(body.ClaimedBy);
+        Assert.Null(body.ClaimedAt);
         Assert.NotNull(body.ScheduledAt);
         Assert.Null(body.StartedAt);
         var stateChange = Assert.Single(body.History);
@@ -183,6 +189,8 @@ public sealed class JobsApiTests
         Assert.Equal(jobId, job.Id);
         Assert.Equal("Failed", job.Status);
         Assert.Equal("SMTP server unavailable.", job.FailureReason);
+        Assert.Null(job.ClaimedBy);
+        Assert.Null(job.ClaimedAt);
         Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero), job.EnqueuedAt);
         Assert.Null(job.ScheduledAt);
         Assert.NotNull(job.StartedAt);
@@ -230,6 +238,8 @@ public sealed class JobsApiTests
         Assert.NotNull(job);
         Assert.Equal(jobId, job.Id);
         Assert.Equal("Completed", job.Status);
+        Assert.Null(job.ClaimedBy);
+        Assert.Null(job.ClaimedAt);
         Assert.Equal(new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero), job.EnqueuedAt);
         Assert.Null(job.ScheduledAt);
         Assert.NotNull(job.StartedAt);

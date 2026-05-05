@@ -87,7 +87,9 @@ public sealed class SqliteJobStore : IJobStore
             .ExecuteUpdate(setters => setters
                 .SetProperty(existingJob => existingJob.Status, JobStatus.Running)
                 .SetProperty(existingJob => existingJob.CurrentStateChangeId, runningJob.CurrentStateChangeId)
-                .SetProperty(existingJob => existingJob.RunAt, runningJob.RunAt));
+                .SetProperty(existingJob => existingJob.RunAt, runningJob.RunAt)
+                .SetProperty(existingJob => existingJob.ClaimedBy, runningJob.ClaimedBy)
+                .SetProperty(existingJob => existingJob.ClaimedAt, runningJob.ClaimedAt));
 
         if (rowsUpdated == 0)
         {
@@ -127,7 +129,9 @@ public sealed class SqliteJobStore : IJobStore
             setters => setters
                 .SetProperty(existingJob => existingJob.Status, JobStatus.Completed)
                 .SetProperty(existingJob => existingJob.CurrentStateChangeId, completedJob.CurrentStateChangeId)
-                .SetProperty(existingJob => existingJob.RunAt, completedJob.RunAt));
+                .SetProperty(existingJob => existingJob.RunAt, completedJob.RunAt)
+                .SetProperty(existingJob => existingJob.ClaimedBy, completedJob.ClaimedBy)
+                .SetProperty(existingJob => existingJob.ClaimedAt, completedJob.ClaimedAt));
 
         if (!completed)
         {
@@ -166,6 +170,8 @@ public sealed class SqliteJobStore : IJobStore
                 .SetProperty(existingJob => existingJob.Status, JobStatus.Failed)
                 .SetProperty(existingJob => existingJob.CurrentStateChangeId, failedJob.CurrentStateChangeId)
                 .SetProperty(existingJob => existingJob.RunAt, failedJob.RunAt)
+                .SetProperty(existingJob => existingJob.ClaimedBy, failedJob.ClaimedBy)
+                .SetProperty(existingJob => existingJob.ClaimedAt, failedJob.ClaimedAt)
                 .SetProperty(existingJob => existingJob.FailureReason, failedJob.FailureReason));
 
         if (!failed)
@@ -207,6 +213,8 @@ public sealed class SqliteJobStore : IJobStore
                 .SetProperty(existingJob => existingJob.Status, JobStatus.Scheduled)
                 .SetProperty(existingJob => existingJob.CurrentStateChangeId, retriedJob.CurrentStateChangeId)
                 .SetProperty(existingJob => existingJob.RunAt, retriedJob.RunAt)
+                .SetProperty(existingJob => existingJob.ClaimedBy, retriedJob.ClaimedBy)
+                .SetProperty(existingJob => existingJob.ClaimedAt, retriedJob.ClaimedAt)
                 .SetProperty(existingJob => existingJob.FailureReason, retriedJob.FailureReason));
 
         if (!scheduled)

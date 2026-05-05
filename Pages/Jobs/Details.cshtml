@@ -27,6 +27,10 @@
         <strong>@job.AttemptCount of @job.MaxAttempts</strong>
     </div>
     <div class="detail-item">
+        <span>Claimed by</span>
+        <strong>@(job.ClaimedBy ?? "Not claimed")</strong>
+    </div>
+    <div class="detail-item">
         <span>Enqueued</span>
         <strong>@FormatTimestamp(job.EnqueuedAt)</strong>
     </div>
@@ -46,6 +50,10 @@
         <div class="detail-item">
             <span>Started</span>
             <strong>@FormatTimestamp(job.StartedAt)</strong>
+        </div>
+        <div class="detail-item">
+            <span>Claimed</span>
+            <strong>@FormatTimestamp(job.ClaimedAt)</strong>
         </div>
         <div class="detail-item">
             <span>Completed</span>

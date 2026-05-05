@@ -28,6 +28,10 @@ public sealed class JobSchedulerDbContextTests
             50,
             jobEntity.FindProperty(nameof(JobRecord.Status))?.GetMaxLength());
         Assert.NotNull(jobEntity.FindProperty(nameof(JobRecord.RunAt)));
+        Assert.Equal(
+            200,
+            jobEntity.FindProperty(nameof(JobRecord.ClaimedBy))?.GetMaxLength());
+        Assert.NotNull(jobEntity.FindProperty(nameof(JobRecord.ClaimedAt)));
         Assert.NotNull(jobEntity.FindIndex(
             [
                 jobEntity.FindProperty(nameof(JobRecord.Status))!,
@@ -86,6 +90,8 @@ public sealed class JobSchedulerDbContextTests
             Assert.Equal("send-welcome-email", persistedJob.Type);
             Assert.Equal(JobStatus.Scheduled, persistedJob.Status);
             Assert.Equal(scheduledAt, persistedJob.RunAt);
+            Assert.Null(persistedJob.ClaimedBy);
+            Assert.Null(persistedJob.ClaimedAt);
             Assert.Equal(persistedJob.History[^1].Id, persistedJob.CurrentStateChangeId);
             Assert.Equal(3, persistedJob.MaxAttempts);
             Assert.Null(persistedJob.FailureReason);
@@ -124,6 +130,9 @@ public sealed class JobSchedulerDbContextTests
             Assert.True(await db.Database.CanConnectAsync());
             Assert.Contains(
                 "20260505125233_InitialJobSchedulerSchema",
+                await db.Database.GetAppliedMigrationsAsync());
+            Assert.Contains(
+                "20260505200107_AddJobClaimOwnership",
                 await db.Database.GetAppliedMigrationsAsync());
         }
     }

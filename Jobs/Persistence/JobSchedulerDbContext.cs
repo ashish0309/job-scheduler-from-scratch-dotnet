@@ -48,6 +48,18 @@ public sealed class JobSchedulerDbContext : DbContext
                         ? new DateTimeOffset(new DateTime(ticks.Value, DateTimeKind.Utc))
                         : null);
 
+            job.Property(entity => entity.ClaimedBy)
+                .HasMaxLength(200);
+
+            job.Property(entity => entity.ClaimedAt)
+                .HasConversion(
+                    claimedAt => claimedAt.HasValue
+                        ? claimedAt.Value.UtcDateTime.Ticks
+                        : (long?)null,
+                    ticks => ticks.HasValue
+                        ? new DateTimeOffset(new DateTime(ticks.Value, DateTimeKind.Utc))
+                        : null);
+
             job.Property(entity => entity.FailureReason)
                 .HasMaxLength(1000);
 
