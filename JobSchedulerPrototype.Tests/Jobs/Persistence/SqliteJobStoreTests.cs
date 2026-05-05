@@ -21,7 +21,12 @@ public sealed class SqliteJobStoreTests
         Assert.Equal(job.Id, persistedJob.Id);
         Assert.Equal(JobStatus.Queued, persistedJob.Status);
         Assert.Equal("""{"userId":"user_123"}""", persistedJob.Payload.GetRawText());
-        Assert.Equal([JobStatus.Queued], persistedJob.History.Select(change => change.Status));
+        var stateChange = Assert.Single(persistedJob.History);
+        Assert.Equal(persistedJob.CurrentStateChangeId, stateChange.Id);
+        Assert.Equal(JobStatus.Queued, stateChange.Status);
+        Assert.Equal(1, stateChange.Sequence);
+        Assert.Equal("Job accepted.", stateChange.Reason);
+        Assert.Equal(persistedJob.EnqueuedAt, stateChange.ChangedAt);
     }
 
     [Fact]

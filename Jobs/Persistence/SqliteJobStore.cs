@@ -14,9 +14,12 @@ public sealed class SqliteJobStore : IJobStore
     public void Add(JobRecord job)
     {
         using var db = _dbContextFactory.CreateDbContext();
+        using var transaction = db.Database.BeginTransaction();
 
         db.Jobs.Add(job);
         db.SaveChanges();
+
+        transaction.Commit();
     }
 
     public JobRecord? Get(Guid id)
