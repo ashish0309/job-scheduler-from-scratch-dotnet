@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services.AddHttpContextAccessor();
 
 var jobStoreConnectionString = builder.Configuration.GetConnectionString("JobStore")
     ?? "Data Source=jobscheduler.db";
@@ -17,6 +18,7 @@ builder.Services.Configure<JobWorkerOptions>(
 builder.Services.AddSingleton<IJobStore, SqliteJobStore>();
 builder.Services.AddSingleton<IJobDefinition, SendWelcomeEmailJobDefinition>();
 builder.Services.AddSingleton<IJobDefinitionRegistry, JobDefinitionRegistry>();
+builder.Services.AddSingleton<IJobActorProvider, DevelopmentHeaderJobActorProvider>();
 builder.Services.AddSingleton<IJobLifecycleService, JobLifecycleService>();
 builder.Services.AddSingleton<IJobHandler, SendWelcomeEmailJobHandler>();
 builder.Services.AddSingleton<IJobHandlerRegistry, JobHandlerRegistry>();

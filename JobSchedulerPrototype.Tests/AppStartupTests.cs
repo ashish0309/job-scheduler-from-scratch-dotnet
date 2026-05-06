@@ -29,6 +29,7 @@ public sealed class AppStartupTests
             var services = scope.ServiceProvider;
 
             Assert.IsType<SqliteJobStore>(services.GetRequiredService<IJobStore>());
+            Assert.IsType<DevelopmentHeaderJobActorProvider>(services.GetRequiredService<IJobActorProvider>());
             var db = services.GetRequiredService<JobSchedulerDbContext>();
             Assert.True(db.Database.CanConnect());
             Assert.Empty(db.Jobs);
