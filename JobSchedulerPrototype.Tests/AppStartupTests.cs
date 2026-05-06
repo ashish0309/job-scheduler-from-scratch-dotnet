@@ -31,8 +31,8 @@ public sealed class AppStartupTests
             Assert.IsType<SqliteJobStore>(services.GetRequiredService<IJobStore>());
             Assert.IsType<DevelopmentHeaderJobActorProvider>(services.GetRequiredService<IJobActorProvider>());
             Assert.IsType<DataAccessScopeProvider>(services.GetRequiredService<IDataAccessScopeProvider>());
-            Assert.IsType<DataVisibilityFilterBuilder>(services.GetRequiredService<IDataVisibilityFilterBuilder>());
-            Assert.IsType<JobVisibilityPolicy>(services.GetRequiredService<IDataVisibilityPolicy>());
+            Assert.IsType<DataAccessPolicyFilterBuilder>(services.GetRequiredService<IDataAccessPolicyFilterBuilder>());
+            Assert.IsType<JobDataAccessPolicy>(services.GetRequiredService<IDataAccessPolicy>());
             var db = services.GetRequiredService<JobSchedulerDbContext>();
             Assert.True(db.Database.CanConnect());
             Assert.Empty(db.Jobs);

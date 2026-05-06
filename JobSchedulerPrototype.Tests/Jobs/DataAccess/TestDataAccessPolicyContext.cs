@@ -2,9 +2,9 @@ using JobSchedulerPrototype.Jobs;
 
 namespace JobSchedulerPrototype.Tests.Jobs;
 
-internal sealed class TestDataVisibilityFilterContext : IDataVisibilityFilterContext
+internal sealed class TestDataAccessPolicyContext : IDataAccessPolicyContext
 {
-    public TestDataVisibilityFilterContext(
+    public TestDataAccessPolicyContext(
         DataAccessScope scope,
         DataAccessOperation operation = DataAccessOperation.Read)
     {

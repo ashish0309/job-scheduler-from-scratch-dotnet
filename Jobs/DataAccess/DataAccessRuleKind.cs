@@ -1,6 +1,6 @@
 namespace JobSchedulerPrototype.Jobs;
 
-public enum DataVisibilityRuleKind
+public enum DataAccessRuleKind
 {
     Boundary,
     Grant

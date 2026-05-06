@@ -5,19 +5,19 @@ using Microsoft.EntityFrameworkCore;
 
 namespace JobSchedulerPrototype.Tests.Jobs;
 
-internal static class DataVisibilityTranslationAssert
+internal static class DataAccessTranslationAssert
 {
     public static async Task RuleTranslates<TEntity>(
-        IDataVisibilityRule<TEntity> rule,
-        IDataVisibilityFilterContext context)
+        IDataAccessRule<TEntity> rule,
+        IDataAccessPolicyContext context)
         where TEntity : class
     {
         await FilterTranslates(rule.BuildFilter(context));
     }
 
     public static async Task PolicyTranslates<TEntity>(
-        DataVisibilityPolicy<TEntity> policy,
-        IDataVisibilityFilterContext context)
+        DataAccessPolicy<TEntity> policy,
+        IDataAccessPolicyContext context)
         where TEntity : class
     {
         var filter = Assert.IsAssignableFrom<Expression<Func<TEntity, bool>>>(

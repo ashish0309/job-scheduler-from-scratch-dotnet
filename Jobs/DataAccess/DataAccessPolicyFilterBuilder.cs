@@ -2,16 +2,16 @@ using System.Linq.Expressions;
 
 namespace JobSchedulerPrototype.Jobs;
 
-public sealed class DataVisibilityFilterBuilder : IDataVisibilityFilterBuilder
+public sealed class DataAccessPolicyFilterBuilder : IDataAccessPolicyFilterBuilder
 {
-    private readonly IReadOnlyDictionary<Type, IDataVisibilityPolicy> _policiesByEntityType;
+    private readonly IReadOnlyDictionary<Type, IDataAccessPolicy> _policiesByEntityType;
 
-    public DataVisibilityFilterBuilder(IEnumerable<IDataVisibilityPolicy> policies)
+    public DataAccessPolicyFilterBuilder(IEnumerable<IDataAccessPolicy> policies)
     {
         _policiesByEntityType = policies.ToDictionary(policy => policy.EntityType);
     }
 
-    public LambdaExpression? BuildFilter(Type entityType, IDataVisibilityFilterContext context)
+    public LambdaExpression? BuildFilter(Type entityType, IDataAccessPolicyContext context)
     {
         return _policiesByEntityType.TryGetValue(entityType, out var policy)
             ? policy.BuildFilter(context)
@@ -19,25 +19,25 @@ public sealed class DataVisibilityFilterBuilder : IDataVisibilityFilterBuilder
     }
 }
 
-internal static class DataVisibilityExpressionComposer
+internal static class DataAccessRuleExpressionComposer
 {
     public static Expression<Func<TEntity, bool>> Compose<TEntity>(
-        IReadOnlyList<IDataVisibilityRule<TEntity>> rules,
-        IDataVisibilityFilterContext context)
+        IReadOnlyList<IDataAccessRule<TEntity>> rules,
+        IDataAccessPolicyContext context)
         where TEntity : class
     {
         if (rules.Count == 0)
         {
             throw new InvalidOperationException(
-                $"Data visibility policy for {typeof(TEntity).Name} must define at least one rule.");
+                $"Data access policy for {typeof(TEntity).Name} must define at least one rule.");
         }
 
         var boundaries = rules
-            .Where(rule => rule.Kind == DataVisibilityRuleKind.Boundary)
+            .Where(rule => rule.Kind == DataAccessRuleKind.Boundary)
             .Select(rule => rule.BuildFilter(context))
             .ToArray();
         var grants = rules
-            .Where(rule => rule.Kind == DataVisibilityRuleKind.Grant)
+            .Where(rule => rule.Kind == DataAccessRuleKind.Grant)
             .Select(rule => rule.BuildFilter(context))
             .ToArray();
 

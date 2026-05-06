@@ -1,6 +1,6 @@
 namespace JobSchedulerPrototype.Jobs;
 
-public interface IDataVisibilityFilterContext
+public interface IDataAccessPolicyContext
 {
     JobActor Actor { get; }
 

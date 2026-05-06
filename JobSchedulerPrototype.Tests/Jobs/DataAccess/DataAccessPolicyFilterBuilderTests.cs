@@ -6,13 +6,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace JobSchedulerPrototype.Tests.Jobs;
 
-public sealed class DataVisibilityFilterBuilderTests
+public sealed class DataAccessPolicyFilterBuilderTests
 {
     [Fact]
     public void BuildFilterUsesPolicyRegisteredForEntityType()
     {
-        var builder = new DataVisibilityFilterBuilder([new JobVisibilityPolicy()]);
-        var context = new TestDataVisibilityFilterContext(
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var context = new TestDataAccessPolicyContext(
             DataAccessScope.Tenant(TestJobActorProvider.TenantId));
 
         var filter = builder.BuildFilter(typeof(JobRecord), context);
@@ -26,8 +26,8 @@ public sealed class DataVisibilityFilterBuilderTests
     [Fact]
     public void BuildFilterReturnsNullWhenEntityHasNoPolicy()
     {
-        var builder = new DataVisibilityFilterBuilder([new JobVisibilityPolicy()]);
-        var context = new TestDataVisibilityFilterContext(
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var context = new TestDataAccessPolicyContext(
             DataAccessScope.Tenant(TestJobActorProvider.TenantId));
 
         var filter = builder.BuildFilter(typeof(JobStateChange), context);
@@ -38,8 +38,8 @@ public sealed class DataVisibilityFilterBuilderTests
     [Fact]
     public void BuildFilterThrowsWhenPolicyDoesNotDefineCurrentOperation()
     {
-        var builder = new DataVisibilityFilterBuilder([new JobVisibilityPolicy()]);
-        var context = new TestDataVisibilityFilterContext(
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var context = new TestDataAccessPolicyContext(
             DataAccessScope.Tenant(TestJobActorProvider.TenantId),
             DataAccessOperation.CompleteJob);
 

@@ -2,11 +2,11 @@ using System.Linq.Expressions;
 
 namespace JobSchedulerPrototype.Jobs;
 
-public interface IDataVisibilityPolicy
+public interface IDataAccessPolicy
 {
     Type EntityType { get; }
 
     IReadOnlyCollection<DataAccessOperation> Operations { get; }
 
-    LambdaExpression BuildFilter(IDataVisibilityFilterContext context);
+    LambdaExpression BuildFilter(IDataAccessPolicyContext context);
 }

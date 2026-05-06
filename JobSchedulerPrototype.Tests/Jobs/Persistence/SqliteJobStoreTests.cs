@@ -260,6 +260,37 @@ public sealed class SqliteJobStoreTests
     }
 
     [Fact]
+    public async Task RenewLeaseUsesCurrentDataAccessPolicyScope()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var systemStore = database.CreateStore(DataAccessScope.AllTenants());
+        var scopedStore = database.CreateStore(
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId));
+        var otherTenantJob = CreateJob(tenantId: "tenant-beta");
+        var claimedAt = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var leaseExpiresAt = claimedAt.AddMinutes(1);
+        var renewedAt = claimedAt.AddSeconds(30);
+        var renewedLeaseExpiresAt = renewedAt.AddMinutes(1);
+        systemStore.Add(otherTenantJob);
+        var runningJob = systemStore.TryClaimNextDueJob(
+            claimedAt,
+            "worker-1",
+            leaseExpiresAt);
+        Assert.NotNull(runningJob);
+
+        var renewed = scopedStore.RenewLease(
+            otherTenantJob.Id,
+            runningJob.CurrentStateChangeId,
+            renewedAt,
+            renewedLeaseExpiresAt);
+
+        Assert.False(renewed);
+        var persistedJob = systemStore.Get(otherTenantJob.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal(leaseExpiresAt, persistedJob.LeaseExpiresAt);
+    }
+
+    [Fact]
     public async Task RenewLeaseReturnsFalseWhenClaimTokenIsStale()
     {
         await using var database = await SqliteJobStoreDatabase.CreateAsync();
@@ -624,7 +655,11 @@ public sealed class SqliteJobStoreTests
 
         public SqliteJobStore CreateStore(DataAccessScope dataAccessScope)
         {
-            return new SqliteJobStore(new TestDbContextFactory(_options, dataAccessScope));
+            var dataAccessScopeProvider = new FixedDataAccessScopeProvider(dataAccessScope);
+
+            return new SqliteJobStore(
+                new TestDbContextFactory(_options, dataAccessScopeProvider),
+                dataAccessScopeProvider);
         }
 
         public async Task ExecuteAsync(Func<JobSchedulerDbContext, Task> action)
@@ -651,10 +686,10 @@ public sealed class SqliteJobStoreTests
 
         public TestDbContextFactory(
             DbContextOptions<JobSchedulerDbContext> options,
-            DataAccessScope dataAccessScope)
+            IDataAccessScopeProvider dataAccessScopeProvider)
         {
             _options = options;
-            _dataAccessScopeProvider = new FixedDataAccessScopeProvider(dataAccessScope);
+            _dataAccessScopeProvider = dataAccessScopeProvider;
         }
 
         public JobSchedulerDbContext CreateDbContext()

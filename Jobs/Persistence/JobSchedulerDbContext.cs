@@ -3,25 +3,25 @@ using System.Text.Json;
 
 namespace JobSchedulerPrototype.Jobs;
 
-public sealed class JobSchedulerDbContext : DbContext, IDataVisibilityFilterContext
+public sealed class JobSchedulerDbContext : DbContext, IDataAccessPolicyContext
 {
-    private static readonly IDataVisibilityFilterBuilder DefaultVisibilityFilterBuilder =
-        new DataVisibilityFilterBuilder([new JobVisibilityPolicy()]);
+    private static readonly IDataAccessPolicyFilterBuilder DefaultDataAccessPolicyFilterBuilder =
+        new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
 
     public JobSchedulerDbContext(
         DbContextOptions<JobSchedulerDbContext> options,
         IDataAccessScopeProvider? dataAccessScopeProvider = null,
-        IDataVisibilityFilterBuilder? visibilityFilterBuilder = null)
+        IDataAccessPolicyFilterBuilder? dataAccessPolicyFilterBuilder = null)
         : base(options)
     {
         _dataAccessScopeProvider = dataAccessScopeProvider
             ?? new FixedDataAccessScopeProvider(DataAccessScope.AllTenants());
-        _visibilityFilterBuilder = visibilityFilterBuilder
-            ?? DefaultVisibilityFilterBuilder;
+        _dataAccessPolicyFilterBuilder = dataAccessPolicyFilterBuilder
+            ?? DefaultDataAccessPolicyFilterBuilder;
     }
 
     private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
-    private readonly IDataVisibilityFilterBuilder _visibilityFilterBuilder;
+    private readonly IDataAccessPolicyFilterBuilder _dataAccessPolicyFilterBuilder;
 
     public DbSet<JobRecord> Jobs => Set<JobRecord>();
 
@@ -144,14 +144,14 @@ public sealed class JobSchedulerDbContext : DbContext, IDataVisibilityFilterCont
             stateChange.HasIndex("JobId", nameof(JobStateChange.Sequence));
         });
 
-        ApplyDataVisibilityQueryFilters(modelBuilder);
+        ApplyDataAccessPolicyQueryFilters(modelBuilder);
     }
 
-    private void ApplyDataVisibilityQueryFilters(ModelBuilder modelBuilder)
+    private void ApplyDataAccessPolicyQueryFilters(ModelBuilder modelBuilder)
     {
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            var filter = _visibilityFilterBuilder.BuildFilter(entityType.ClrType, this);
+            var filter = _dataAccessPolicyFilterBuilder.BuildFilter(entityType.ClrType, this);
             if (filter is not null)
             {
                 modelBuilder.Entity(entityType.ClrType)
@@ -163,7 +163,7 @@ public sealed class JobSchedulerDbContext : DbContext, IDataVisibilityFilterCont
             if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
             {
                 throw new InvalidOperationException(
-                    $"Tenant-scoped entity {entityType.ClrType.Name} must register a data visibility policy.");
+                    $"Tenant-scoped entity {entityType.ClrType.Name} must register a data access policy.");
             }
         }
     }

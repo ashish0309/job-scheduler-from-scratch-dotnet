@@ -6,11 +6,23 @@ namespace JobSchedulerPrototype.Jobs;
 
 public sealed class SqliteJobStore : IJobStore
 {
-    private readonly IDbContextFactory<JobSchedulerDbContext> _dbContextFactory;
+    private static readonly IDataAccessPolicyFilterBuilder DefaultDataAccessPolicyFilterBuilder =
+        new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
 
-    public SqliteJobStore(IDbContextFactory<JobSchedulerDbContext> dbContextFactory)
+    private readonly IDbContextFactory<JobSchedulerDbContext> _dbContextFactory;
+    private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
+    private readonly IDataAccessPolicyFilterBuilder _dataAccessPolicyFilterBuilder;
+
+    public SqliteJobStore(
+        IDbContextFactory<JobSchedulerDbContext> dbContextFactory,
+        IDataAccessScopeProvider? dataAccessScopeProvider = null,
+        IDataAccessPolicyFilterBuilder? dataAccessPolicyFilterBuilder = null)
     {
         _dbContextFactory = dbContextFactory;
+        _dataAccessScopeProvider = dataAccessScopeProvider
+            ?? new FixedDataAccessScopeProvider(DataAccessScope.AllTenants());
+        _dataAccessPolicyFilterBuilder = dataAccessPolicyFilterBuilder
+            ?? DefaultDataAccessPolicyFilterBuilder;
     }
 
     public void Add(JobRecord job)
@@ -197,8 +209,11 @@ public sealed class SqliteJobStore : IJobStore
         }
 
         using var db = _dbContextFactory.CreateDbContext();
+        var policyFilter = BuildJobPolicyFilter(DataAccessOperation.RenewLease);
 
         var rowsUpdated = db.Jobs
+            .IgnoreQueryFilters()
+            .Where(policyFilter)
             .Where(existingJob => existingJob.Id == id
                 && existingJob.Status == JobStatus.Running
                 && existingJob.CurrentStateChangeId == expectedCurrentStateChangeId)
@@ -316,6 +331,23 @@ public sealed class SqliteJobStore : IJobStore
             .Include(job => job.History)
             .AsEnumerable()
             .Select(job => job.WithOrderedHistory());
+    }
+
+    private Expression<Func<JobRecord, bool>> BuildJobPolicyFilter(
+        DataAccessOperation operation)
+    {
+        var context = new DataAccessPolicyContext(
+            _dataAccessScopeProvider.CurrentActor,
+            _dataAccessScopeProvider.Current,
+            operation);
+        var filter = _dataAccessPolicyFilterBuilder.BuildFilter(
+            typeof(JobRecord),
+            context);
+
+        return filter is Expression<Func<JobRecord, bool>> jobFilter
+            ? jobFilter
+            : throw new InvalidOperationException(
+                $"Job data access policy must define a filter for operation '{operation}'.");
     }
 
     private static void AppendStateChanges(
