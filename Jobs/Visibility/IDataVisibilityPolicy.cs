@@ -6,5 +6,7 @@ public interface IDataVisibilityPolicy
 {
     Type EntityType { get; }
 
+    IReadOnlyCollection<DataAccessOperation> Operations { get; }
+
     LambdaExpression BuildFilter(IDataVisibilityFilterContext context);
 }

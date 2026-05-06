@@ -31,6 +31,8 @@ public sealed class JobSchedulerDbContext : DbContext, IDataVisibilityFilterCont
 
     public DataAccessScope Scope => _dataAccessScopeProvider.Current;
 
+    public DataAccessOperation Operation => DataAccessOperation.Read;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<JobRecord>(job =>

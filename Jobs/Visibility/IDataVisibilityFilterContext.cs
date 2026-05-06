@@ -6,6 +6,8 @@ public interface IDataVisibilityFilterContext
 
     DataAccessScope Scope { get; }
 
+    DataAccessOperation Operation { get; }
+
     bool IncludesAllTenants => Scope.IncludesAllTenants;
 
     string? CurrentTenantId => Scope.TenantId;

@@ -36,6 +36,20 @@ public sealed class DataVisibilityFilterBuilderTests
     }
 
     [Fact]
+    public void BuildFilterThrowsWhenPolicyDoesNotDefineCurrentOperation()
+    {
+        var builder = new DataVisibilityFilterBuilder([new JobVisibilityPolicy()]);
+        var context = new TestDataVisibilityFilterContext(
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId),
+            DataAccessOperation.CompleteJob);
+
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => builder.BuildFilter(typeof(JobRecord), context));
+
+        Assert.Contains("does not define rules for operation 'CompleteJob'", exception.Message);
+    }
+
+    [Fact]
     public async Task FilterWithServiceMethodCompilesButFailsWhenEfTranslatesQuery()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
