@@ -53,6 +53,51 @@ public sealed class SqliteJobStoreTests
     }
 
     [Fact]
+    public async Task ListAndGetApplyCurrentTenantScope()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var tenantJob = CreateJob(tenantId: TestJobActorProvider.TenantId);
+        var otherTenantJob = CreateJob(tenantId: "tenant-beta");
+        store.Add(otherTenantJob);
+        store.Add(tenantJob);
+
+        var scopedStore = database.CreateStore(DataAccessScope.Tenant(TestJobActorProvider.TenantId));
+        var jobs = scopedStore.List().ToArray();
+
+        var job = Assert.Single(jobs);
+        Assert.Equal(tenantJob.Id, job.Id);
+        Assert.Equal(tenantJob.Id, scopedStore.Get(tenantJob.Id)?.Id);
+        Assert.Null(scopedStore.Get(otherTenantJob.Id));
+    }
+
+    [Fact]
+    public async Task TryClaimNextDueJobUsesCurrentDataAccessScope()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var now = new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero);
+        var otherTenantJob = CreateJob(
+            tenantId: "tenant-beta",
+            enqueuedAt: now.AddMinutes(-1));
+        var tenantJob = CreateJob(
+            tenantId: TestJobActorProvider.TenantId,
+            enqueuedAt: now);
+        store.Add(otherTenantJob);
+        store.Add(tenantJob);
+
+        var scopedStore = database.CreateStore(DataAccessScope.Tenant(TestJobActorProvider.TenantId));
+        var scopedClaim = scopedStore.TryClaimNextDueJob(now, "worker-1", now.AddMinutes(1));
+        var systemStore = database.CreateStore(DataAccessScope.AllTenants());
+        var systemClaim = systemStore.TryClaimNextDueJob(now, "worker-2", now.AddMinutes(1));
+
+        Assert.NotNull(scopedClaim);
+        Assert.Equal(tenantJob.Id, scopedClaim.Id);
+        Assert.NotNull(systemClaim);
+        Assert.Equal(otherTenantJob.Id, systemClaim.Id);
+    }
+
+    [Fact]
     public async Task TryClaimNextDueJobClaimsOldestQueuedJob()
     {
         await using var database = await SqliteJobStoreDatabase.CreateAsync();
@@ -484,11 +529,14 @@ public sealed class SqliteJobStoreTests
             database.CreateStore().Get(job.Id)?.History.Select(change => change.Status));
     }
 
-    private static JobRecord CreateJob(DateTimeOffset? enqueuedAt = null, int maxAttempts = 3)
+    private static JobRecord CreateJob(
+        DateTimeOffset? enqueuedAt = null,
+        int maxAttempts = 3,
+        string tenantId = TestJobActorProvider.TenantId)
     {
         return JobRecord.Enqueue(
             Guid.NewGuid(),
-            TestJobActorProvider.TenantId,
+            tenantId,
             TestJobActorProvider.ActorId,
             "send-welcome-email",
             Payload(),
@@ -571,7 +619,12 @@ public sealed class SqliteJobStoreTests
 
         public SqliteJobStore CreateStore()
         {
-            return new SqliteJobStore(new TestDbContextFactory(_options));
+            return CreateStore(DataAccessScope.AllTenants());
+        }
+
+        public SqliteJobStore CreateStore(DataAccessScope dataAccessScope)
+        {
+            return new SqliteJobStore(new TestDbContextFactory(_options, dataAccessScope));
         }
 
         public async Task ExecuteAsync(Func<JobSchedulerDbContext, Task> action)
@@ -594,15 +647,19 @@ public sealed class SqliteJobStoreTests
     private sealed class TestDbContextFactory : IDbContextFactory<JobSchedulerDbContext>
     {
         private readonly DbContextOptions<JobSchedulerDbContext> _options;
+        private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
 
-        public TestDbContextFactory(DbContextOptions<JobSchedulerDbContext> options)
+        public TestDbContextFactory(
+            DbContextOptions<JobSchedulerDbContext> options,
+            DataAccessScope dataAccessScope)
         {
             _options = options;
+            _dataAccessScopeProvider = new FixedDataAccessScopeProvider(dataAccessScope);
         }
 
         public JobSchedulerDbContext CreateDbContext()
         {
-            return new JobSchedulerDbContext(_options);
+            return new JobSchedulerDbContext(_options, _dataAccessScopeProvider);
         }
     }
 }

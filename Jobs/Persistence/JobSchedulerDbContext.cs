@@ -3,16 +3,33 @@ using System.Text.Json;
 
 namespace JobSchedulerPrototype.Jobs;
 
-public sealed class JobSchedulerDbContext : DbContext
+public sealed class JobSchedulerDbContext : DbContext, IDataVisibilityFilterContext
 {
-    public JobSchedulerDbContext(DbContextOptions<JobSchedulerDbContext> options)
+    private static readonly IDataVisibilityFilterBuilder DefaultVisibilityFilterBuilder =
+        new DataVisibilityFilterBuilder([new JobVisibilityPolicy()]);
+
+    public JobSchedulerDbContext(
+        DbContextOptions<JobSchedulerDbContext> options,
+        IDataAccessScopeProvider? dataAccessScopeProvider = null,
+        IDataVisibilityFilterBuilder? visibilityFilterBuilder = null)
         : base(options)
     {
+        _dataAccessScopeProvider = dataAccessScopeProvider
+            ?? new FixedDataAccessScopeProvider(DataAccessScope.AllTenants());
+        _visibilityFilterBuilder = visibilityFilterBuilder
+            ?? DefaultVisibilityFilterBuilder;
     }
+
+    private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
+    private readonly IDataVisibilityFilterBuilder _visibilityFilterBuilder;
 
     public DbSet<JobRecord> Jobs => Set<JobRecord>();
 
     public DbSet<JobStateChange> JobStateChanges => Set<JobStateChange>();
+
+    public JobActor Actor => _dataAccessScopeProvider.CurrentActor;
+
+    public DataAccessScope Scope => _dataAccessScopeProvider.Current;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -124,5 +141,28 @@ public sealed class JobSchedulerDbContext : DbContext
 
             stateChange.HasIndex("JobId", nameof(JobStateChange.Sequence));
         });
+
+        ApplyDataVisibilityQueryFilters(modelBuilder);
+    }
+
+    private void ApplyDataVisibilityQueryFilters(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            var filter = _visibilityFilterBuilder.BuildFilter(entityType.ClrType, this);
+            if (filter is not null)
+            {
+                modelBuilder.Entity(entityType.ClrType)
+                    .HasQueryFilter(filter);
+
+                continue;
+            }
+
+            if (typeof(ITenantScoped).IsAssignableFrom(entityType.ClrType))
+            {
+                throw new InvalidOperationException(
+                    $"Tenant-scoped entity {entityType.ClrType.Name} must register a data visibility policy.");
+            }
+        }
     }
 }

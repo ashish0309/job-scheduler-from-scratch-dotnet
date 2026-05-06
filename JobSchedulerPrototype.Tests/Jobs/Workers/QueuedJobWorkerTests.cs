@@ -30,6 +30,30 @@ public sealed class QueuedJobWorkerTests
     }
 
     [Fact]
+    public async Task ProcessNextJobAsyncExecutesHandlerUnderJobTenantScope()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        var dataAccessScopeProvider = new FixedDataAccessScopeProvider(DataAccessScope.AllTenants());
+        var dispatcher = new CapturingDataAccessScopeJobDispatcher(dataAccessScopeProvider);
+        store.Add(job);
+        var worker = new QueuedJobWorker(
+            LifecycleService(store),
+            dispatcher,
+            NullLogger<QueuedJobWorker>.Instance,
+            simulatedWorkDuration: TimeSpan.Zero,
+            leaseDuration: TimeSpan.FromSeconds(60),
+            dataAccessScopeProvider);
+
+        var processedJob = await worker.ProcessNextJobAsync("worker-1", CancellationToken.None);
+
+        Assert.True(processedJob);
+        Assert.NotNull(dispatcher.CapturedScope);
+        Assert.False(dispatcher.CapturedScope.IncludesAllTenants);
+        Assert.Equal(job.TenantId, dispatcher.CapturedScope.TenantId);
+    }
+
+    [Fact]
     public async Task ProcessNextJobAsyncRenewsLeaseWhileExecutionIsRunning()
     {
         var store = new InMemoryJobStore();
@@ -226,6 +250,24 @@ public sealed class QueuedJobWorkerTests
         public Task<JobExecutionResult> ExecuteAsync(JobRecord job, CancellationToken cancellationToken)
         {
             return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class CapturingDataAccessScopeJobDispatcher : IJobDispatcher
+    {
+        private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
+
+        public CapturingDataAccessScopeJobDispatcher(IDataAccessScopeProvider dataAccessScopeProvider)
+        {
+            _dataAccessScopeProvider = dataAccessScopeProvider;
+        }
+
+        public DataAccessScope? CapturedScope { get; private set; }
+
+        public Task<JobExecutionResult> ExecuteAsync(JobRecord job, CancellationToken cancellationToken)
+        {
+            CapturedScope = _dataAccessScopeProvider.Current;
+            return Task.FromResult(JobExecutionResult.Success());
         }
     }
 

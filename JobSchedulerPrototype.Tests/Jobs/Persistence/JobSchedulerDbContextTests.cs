@@ -48,6 +48,7 @@ public sealed class JobSchedulerDbContextTests
             ]));
         Assert.NotNull(jobEntity.FindIndex(
             [jobEntity.FindProperty(nameof(JobRecord.TenantId))!]));
+        Assert.NotNull(jobEntity.GetQueryFilter());
         Assert.Equal(
             1000,
             jobEntity.FindProperty(nameof(JobRecord.FailureReason))?.GetMaxLength());
@@ -63,6 +64,41 @@ public sealed class JobSchedulerDbContextTests
             1000,
             stateChangeEntity.FindProperty(nameof(JobStateChange.Reason))?.GetMaxLength());
         Assert.False(stateChangeEntity.FindProperty(nameof(JobStateChange.Sequence))?.IsNullable);
+    }
+
+    [Fact]
+    public async Task TenantScopedQueriesOnlyReturnCurrentTenantJobs()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<JobSchedulerDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        var tenantJob = CreateQueuedJob(TestJobActorProvider.TenantId);
+        var otherTenantJob = CreateQueuedJob("tenant-beta");
+
+        await using (var db = CreateDbContext(options, DataAccessScope.AllTenants()))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.Jobs.AddRange(tenantJob, otherTenantJob);
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = CreateDbContext(
+            options,
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId)))
+        {
+            var jobs = await db.Jobs.ToArrayAsync();
+
+            var job = Assert.Single(jobs);
+            Assert.Equal(tenantJob.Id, job.Id);
+            Assert.Null(await db.Jobs.SingleOrDefaultAsync(job => job.Id == otherTenantJob.Id));
+        }
+
+        await using (var db = CreateDbContext(options, DataAccessScope.AllTenants()))
+        {
+            Assert.Equal(2, await db.Jobs.CountAsync());
+        }
     }
 
     [Fact]
@@ -164,5 +200,26 @@ public sealed class JobSchedulerDbContextTests
         using var document = JsonDocument.Parse(
             """{"userId":"user_123","email":"person@example.com"}""");
         return document.RootElement.Clone();
+    }
+
+    private static JobSchedulerDbContext CreateDbContext(
+        DbContextOptions<JobSchedulerDbContext> options,
+        DataAccessScope dataAccessScope)
+    {
+        return new JobSchedulerDbContext(
+            options,
+            new FixedDataAccessScopeProvider(dataAccessScope));
+    }
+
+    private static JobRecord CreateQueuedJob(string tenantId)
+    {
+        return JobRecord.Enqueue(
+            Guid.NewGuid(),
+            tenantId,
+            TestJobActorProvider.ActorId,
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
     }
 }

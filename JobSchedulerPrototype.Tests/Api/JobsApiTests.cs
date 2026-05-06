@@ -174,6 +174,38 @@ public sealed class JobsApiTests
     }
 
     [Fact]
+    public async Task GetJobsAndGetJobUseCurrentTenantScopeWithSqliteStore()
+    {
+        await using var factory = new JobsApiFactory(useSqliteStore: true);
+        using var client = factory.CreateClient();
+        var tenantJob = await PostJobForTenant(
+            client,
+            TestJobActorProvider.TenantId,
+            "user_alpha");
+        var otherTenantJob = await PostJobForTenant(
+            client,
+            "tenant-beta",
+            "user_beta");
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/jobs");
+        AddActorHeaders(listRequest, TestJobActorProvider.TenantId);
+        var listResponse = await client.SendAsync(listRequest);
+        var otherTenantDetailRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/jobs/{otherTenantJob.Id}");
+        AddActorHeaders(otherTenantDetailRequest, TestJobActorProvider.TenantId);
+        var otherTenantDetailResponse = await client.SendAsync(otherTenantDetailRequest);
+
+        listResponse.EnsureSuccessStatusCode();
+        var jobs = await listResponse.Content.ReadFromJsonAsync<JobResponse[]>();
+        Assert.NotNull(jobs);
+        var job = Assert.Single(jobs);
+        Assert.Equal(tenantJob.Id, job.Id);
+        Assert.Equal(TestJobActorProvider.TenantId, job.TenantId);
+        Assert.Equal(HttpStatusCode.NotFound, otherTenantDetailResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task GetJobReturnsFailureReasonWhenJobFailed()
     {
         var jobId = Guid.NewGuid();
@@ -397,18 +429,65 @@ public sealed class JobsApiTests
         return document.RootElement.Clone();
     }
 
+    private static async Task<JobResponse> PostJobForTenant(
+        HttpClient client,
+        string tenantId,
+        string userId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/jobs")
+        {
+            Content = JsonContent.Create(new
+            {
+                type = "send-welcome-email",
+                payload = new
+                {
+                    userId,
+                    email = $"{userId}@example.com"
+                }
+            })
+        };
+        AddActorHeaders(request, tenantId);
+
+        var response = await client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var job = await response.Content.ReadFromJsonAsync<JobResponse>();
+        Assert.NotNull(job);
+        return job;
+    }
+
+    private static void AddActorHeaders(HttpRequestMessage request, string tenantId)
+    {
+        request.Headers.Add(
+            DevelopmentHeaderJobActorProvider.ActorIdHeaderName,
+            $"{tenantId}-user");
+        request.Headers.Add(
+            DevelopmentHeaderJobActorProvider.TenantIdHeaderName,
+            tenantId);
+    }
+
     private sealed class JobsApiFactory : WebApplicationFactory<Program>
     {
         private readonly Action<IJobStore>? _configureStore;
-        private readonly string _connectionString = $"Data Source=file:{Guid.NewGuid():N}?mode=memory&cache=shared";
+        private readonly string _databasePath = Path.Combine(
+            Path.GetTempPath(),
+            $"job-api-tests-{Guid.NewGuid():N}.db");
+        private readonly bool _useSqliteStore;
+        private readonly string _connectionString;
 
-        public JobsApiFactory(Action<IJobStore>? configureStore = null)
+        public JobsApiFactory(
+            Action<IJobStore>? configureStore = null,
+            bool useSqliteStore = false)
         {
             _configureStore = configureStore;
+            _useSqliteStore = useSqliteStore;
+            _connectionString = $"Data Source={_databasePath}";
         }
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            builder.UseSetting("ConnectionStrings:JobStore", _connectionString);
+
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
                 configuration.AddInMemoryCollection(
@@ -421,14 +500,35 @@ public sealed class JobsApiTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IHostedService>();
-                services.RemoveAll<IJobStore>();
-                services.AddSingleton<IJobStore>(_ =>
+                if (!_useSqliteStore)
                 {
-                    var store = new InMemoryJobStore();
-                    _configureStore?.Invoke(store);
-                    return store;
-                });
+                    services.RemoveAll<IJobStore>();
+                    services.AddSingleton<IJobStore>(_ =>
+                    {
+                        var store = new InMemoryJobStore();
+                        _configureStore?.Invoke(store);
+                        return store;
+                    });
+                }
             });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                TryDeleteDatabase();
+            }
+
+            base.Dispose(disposing);
+        }
+
+        private void TryDeleteDatabase()
+        {
+            if (File.Exists(_databasePath))
+            {
+                File.Delete(_databasePath);
+            }
         }
     }
 }

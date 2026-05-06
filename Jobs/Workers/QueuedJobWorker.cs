@@ -6,10 +6,27 @@ public sealed class QueuedJobWorker : IJobWorker
 {
     private readonly IJobLifecycleService _lifecycle;
     private readonly IJobDispatcher _dispatcher;
+    private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
     private readonly ILogger<QueuedJobWorker> _logger;
     private readonly TimeSpan _simulatedWorkDuration;
     private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _leaseRenewalInterval;
+
+    public QueuedJobWorker(
+        IJobLifecycleService lifecycle,
+        IJobDispatcher dispatcher,
+        ILogger<QueuedJobWorker> logger,
+        IOptions<JobWorkerOptions> options,
+        IDataAccessScopeProvider dataAccessScopeProvider)
+        : this(
+            lifecycle,
+            dispatcher,
+            logger,
+            options.Value.ValidSimulatedWorkDuration,
+            options.Value.ValidLeaseDuration,
+            dataAccessScopeProvider)
+    {
+    }
 
     public QueuedJobWorker(
         IJobLifecycleService lifecycle,
@@ -20,8 +37,8 @@ public sealed class QueuedJobWorker : IJobWorker
             lifecycle,
             dispatcher,
             logger,
-            options.Value.ValidSimulatedWorkDuration,
-            options.Value.ValidLeaseDuration)
+            options,
+            new FixedDataAccessScopeProvider(DataAccessScope.AllTenants()))
     {
     }
 
@@ -40,9 +57,27 @@ public sealed class QueuedJobWorker : IJobWorker
         ILogger<QueuedJobWorker> logger,
         TimeSpan simulatedWorkDuration,
         TimeSpan leaseDuration)
+        : this(
+            lifecycle,
+            dispatcher,
+            logger,
+            simulatedWorkDuration,
+            leaseDuration,
+            new FixedDataAccessScopeProvider(DataAccessScope.AllTenants()))
+    {
+    }
+
+    public QueuedJobWorker(
+        IJobLifecycleService lifecycle,
+        IJobDispatcher dispatcher,
+        ILogger<QueuedJobWorker> logger,
+        TimeSpan simulatedWorkDuration,
+        TimeSpan leaseDuration,
+        IDataAccessScopeProvider dataAccessScopeProvider)
     {
         _lifecycle = lifecycle;
         _dispatcher = dispatcher;
+        _dataAccessScopeProvider = dataAccessScopeProvider;
         _logger = logger;
         _simulatedWorkDuration = simulatedWorkDuration;
         _leaseDuration = leaseDuration;
@@ -52,7 +87,12 @@ public sealed class QueuedJobWorker : IJobWorker
     public async Task<bool> ProcessNextJobAsync(string workerId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        var job = _lifecycle.ClaimNextDueJob(now, workerId, now.Add(_leaseDuration));
+        JobRecord? job;
+        using (_dataAccessScopeProvider.BeginScope(DataAccessScope.AllTenants()))
+        {
+            job = _lifecycle.ClaimNextDueJob(now, workerId, now.Add(_leaseDuration));
+        }
+
         if (job is null)
         {
             return false;
@@ -75,14 +115,21 @@ public sealed class QueuedJobWorker : IJobWorker
         try
         {
             await Task.Delay(_simulatedWorkDuration, cancellationToken);
-            result = await ExecuteJob(job, cancellationToken);
+            using (_dataAccessScopeProvider.BeginScope(DataAccessScope.Tenant(job.TenantId)))
+            {
+                result = await ExecuteJob(job, cancellationToken);
+            }
         }
         finally
         {
             await StopLeaseRenewal(leaseRenewalCancellation, leaseRenewalTask);
         }
 
-        var completion = _lifecycle.CompleteExecution(job, result);
+        JobExecutionCompletion completion;
+        using (_dataAccessScopeProvider.BeginScope(DataAccessScope.AllTenants()))
+        {
+            completion = _lifecycle.CompleteExecution(job, result);
+        }
 
         if (completion.Status == JobExecutionCompletionStatus.Completed)
         {
@@ -158,6 +205,8 @@ public sealed class QueuedJobWorker : IJobWorker
         string workerId,
         CancellationToken cancellationToken)
     {
+        using var scope = _dataAccessScopeProvider.BeginScope(DataAccessScope.AllTenants());
+
         try
         {
             while (true)
