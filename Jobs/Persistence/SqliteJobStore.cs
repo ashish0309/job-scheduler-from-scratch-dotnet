@@ -6,47 +6,30 @@ namespace JobSchedulerPrototype.Jobs;
 
 public sealed class SqliteJobStore : IJobStore
 {
-    private static readonly IDataAccessPolicyFilterBuilder DefaultDataAccessPolicyFilterBuilder =
-        new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
-
     private readonly IDbContextFactory<JobSchedulerDbContext> _dbContextFactory;
-    private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
-    private readonly IDataAccessPolicyFilterBuilder _dataAccessPolicyFilterBuilder;
 
     public SqliteJobStore(
-        IDbContextFactory<JobSchedulerDbContext> dbContextFactory,
-        IDataAccessScopeProvider? dataAccessScopeProvider = null,
-        IDataAccessPolicyFilterBuilder? dataAccessPolicyFilterBuilder = null)
+        IDbContextFactory<JobSchedulerDbContext> dbContextFactory)
     {
         _dbContextFactory = dbContextFactory;
-        _dataAccessScopeProvider = dataAccessScopeProvider
-            ?? new FixedDataAccessScopeProvider(DataAccessScope.AllTenants());
-        _dataAccessPolicyFilterBuilder = dataAccessPolicyFilterBuilder
-            ?? DefaultDataAccessPolicyFilterBuilder;
     }
 
     public void Add(JobRecord job)
     {
         using var db = _dbContextFactory.CreateDbContext();
-        using var transaction = db.Database.BeginTransaction();
-
         db.Jobs.Add(job);
         db.SaveChanges();
-
-        transaction.Commit();
     }
 
     public JobRecord? Get(Guid id)
     {
         using var db = _dbContextFactory.CreateDbContext();
-
         return LoadJob(db, id);
     }
 
     public IReadOnlyCollection<JobRecord> List()
     {
         using var db = _dbContextFactory.CreateDbContext();
-
         return LoadJobs(db)
             .OrderBy(job => job.EnqueuedAt)
             .ToArray();
@@ -209,11 +192,7 @@ public sealed class SqliteJobStore : IJobStore
         }
 
         using var db = _dbContextFactory.CreateDbContext();
-        var policyFilter = BuildJobPolicyFilter(DataAccessOperation.RenewLease);
-
         var rowsUpdated = db.Jobs
-            .IgnoreQueryFilters()
-            .Where(policyFilter)
             .Where(existingJob => existingJob.Id == id
                 && existingJob.Status == JobStatus.Running
                 && existingJob.CurrentStateChangeId == expectedCurrentStateChangeId)
@@ -315,7 +294,9 @@ public sealed class SqliteJobStore : IJobStore
         return true;
     }
 
-    private static JobRecord? LoadJob(JobSchedulerDbContext db, Guid id)
+    private JobRecord? LoadJob(
+        JobSchedulerDbContext db,
+        Guid id)
     {
         return db.Jobs
             .AsNoTracking()
@@ -324,7 +305,8 @@ public sealed class SqliteJobStore : IJobStore
             ?.WithOrderedHistory();
     }
 
-    private static IEnumerable<JobRecord> LoadJobs(JobSchedulerDbContext db)
+    private IEnumerable<JobRecord> LoadJobs(
+        JobSchedulerDbContext db)
     {
         return db.Jobs
             .AsNoTracking()
@@ -333,36 +315,7 @@ public sealed class SqliteJobStore : IJobStore
             .Select(job => job.WithOrderedHistory());
     }
 
-    private Expression<Func<JobRecord, bool>> BuildJobPolicyFilter(
-        DataAccessOperation operation)
-    {
-        var context = new DataAccessPolicyContext(
-            _dataAccessScopeProvider.CurrentActor,
-            _dataAccessScopeProvider.Current,
-            operation);
-        var filter = _dataAccessPolicyFilterBuilder.BuildFilter(
-            typeof(JobRecord),
-            context);
-
-        return filter is Expression<Func<JobRecord, bool>> jobFilter
-            ? jobFilter
-            : throw new InvalidOperationException(
-                $"Job data access policy must define a filter for operation '{operation}'.");
-    }
-
-    private static void AppendStateChanges(
-        JobSchedulerDbContext db,
-        Guid jobId,
-        IEnumerable<JobStateChange> stateChanges)
-    {
-        foreach (var stateChange in stateChanges)
-        {
-            db.JobStateChanges.Add(stateChange);
-            db.Entry(stateChange).Property("JobId").CurrentValue = jobId;
-        }
-    }
-
-    private static bool TryPersistTransition(
+    private bool TryPersistTransition(
         JobSchedulerDbContext db,
         Guid jobId,
         JobStatus expectedStatus,
@@ -388,5 +341,17 @@ public sealed class SqliteJobStore : IJobStore
             updatedJob.History.Skip(previousHistoryCount));
         db.SaveChanges();
         return true;
+    }
+
+    private static void AppendStateChanges(
+        JobSchedulerDbContext db,
+        Guid jobId,
+        IEnumerable<JobStateChange> stateChanges)
+    {
+        foreach (var stateChange in stateChanges)
+        {
+            db.JobStateChanges.Add(stateChange);
+            db.Entry(stateChange).Property("JobId").CurrentValue = jobId;
+        }
     }
 }

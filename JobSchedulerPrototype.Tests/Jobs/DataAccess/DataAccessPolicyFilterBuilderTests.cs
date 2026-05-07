@@ -41,12 +41,12 @@ public sealed class DataAccessPolicyFilterBuilderTests
         var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
         var context = new TestDataAccessPolicyContext(
             DataAccessScope.Tenant(TestJobActorProvider.TenantId),
-            DataAccessOperation.CompleteJob);
+            (DataAccessOperation)999);
 
         var exception = Assert.Throws<InvalidOperationException>(
             () => builder.BuildFilter(typeof(JobRecord), context));
 
-        Assert.Contains("does not define rules for operation 'CompleteJob'", exception.Message);
+        Assert.Contains("does not define rules for operation '999'", exception.Message);
     }
 
     [Fact]

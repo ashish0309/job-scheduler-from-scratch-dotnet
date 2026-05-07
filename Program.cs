@@ -15,10 +15,16 @@ builder.Services.AddDbContextFactory<JobSchedulerDbContext>(options =>
     options.UseSqlite(jobStoreConnectionString));
 builder.Services.Configure<JobWorkerOptions>(
     builder.Configuration.GetSection(JobWorkerOptions.SectionName));
-builder.Services.AddSingleton<IJobStore, SqliteJobStore>();
+builder.Services.AddSingleton<SqliteJobStore>();
+builder.Services.AddSingleton<IJobStore>(services => new DataAccessScopedJobStore(
+    services.GetRequiredService<SqliteJobStore>(),
+    services.GetRequiredService<IDataAccessScopeProvider>()));
 builder.Services.AddSingleton<IJobDefinition, SendWelcomeEmailJobDefinition>();
 builder.Services.AddSingleton<IJobDefinitionRegistry, JobDefinitionRegistry>();
 builder.Services.AddSingleton<IJobActorProvider, DevelopmentHeaderJobActorProvider>();
+builder.Services.AddSingleton<IJobAuthorizationRuleEvaluator, JobAuthorizationRuleEvaluator>();
+builder.Services.AddJobActions();
+builder.Services.AddJobApiEndpoints();
 builder.Services.AddSingleton<IDataAccessScopeProvider, DataAccessScopeProvider>();
 builder.Services.AddSingleton<IDataAccessPolicy, JobDataAccessPolicy>();
 builder.Services.AddSingleton<IDataAccessPolicyFilterBuilder, DataAccessPolicyFilterBuilder>();

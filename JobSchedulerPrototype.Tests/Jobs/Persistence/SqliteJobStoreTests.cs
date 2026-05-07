@@ -658,8 +658,7 @@ public sealed class SqliteJobStoreTests
             var dataAccessScopeProvider = new FixedDataAccessScopeProvider(dataAccessScope);
 
             return new SqliteJobStore(
-                new TestDbContextFactory(_options, dataAccessScopeProvider),
-                dataAccessScopeProvider);
+                new TestDbContextFactory(_options, dataAccessScopeProvider));
         }
 
         public async Task ExecuteAsync(Func<JobSchedulerDbContext, Task> action)

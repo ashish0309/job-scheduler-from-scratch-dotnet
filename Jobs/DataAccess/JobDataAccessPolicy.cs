@@ -11,6 +11,6 @@ public sealed class JobDataAccessPolicy : DataAccessPolicy<JobRecord>
         new Dictionary<DataAccessOperation, IReadOnlyList<IDataAccessRule<JobRecord>>>
         {
             [DataAccessOperation.Read] = [],
-            [DataAccessOperation.RenewLease] = []
+            [DataAccessOperation.Mutate] = []
         };
 }

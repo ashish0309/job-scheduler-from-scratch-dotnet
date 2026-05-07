@@ -1,6 +1,7 @@
 using System.Text.Json;
 using JobSchedulerPrototype.Jobs;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace JobSchedulerPrototype.Api;
 
@@ -10,30 +11,19 @@ public static class JobsApi
     {
         var group = endpoints.MapGroup("/api/jobs");
 
-        group.MapPost("", EnqueueJob);
+        var endpointDefinitions = endpoints.ServiceProvider
+            .GetServices<IJobEndpointDefinition>()
+            .OrderBy(static definition => definition.GetType().FullName, StringComparer.Ordinal);
+
+        foreach (var endpointDefinition in endpointDefinitions)
+        {
+            endpointDefinition.Map(group);
+        }
+
         group.MapGet("", ListJobs);
         group.MapGet("/{id:guid}", GetJob);
 
         return group;
-    }
-
-    private static Results<Accepted<JobResponse>, BadRequest<JobValidationError>> EnqueueJob(
-        EnqueueJobRequest request,
-        IJobLifecycleService lifecycle)
-    {
-        var result = lifecycle.Enqueue(
-            request.Type,
-            request.Payload,
-            request.DelaySeconds);
-
-        if (!result.Accepted)
-        {
-            return TypedResults.BadRequest(new JobValidationError(
-                result.ErrorMessage ?? "Job request is invalid."));
-        }
-
-        var response = ToResponse(result.Job!);
-        return TypedResults.Accepted(response.StatusUrl, response);
     }
 
     private static Ok<IReadOnlyCollection<JobResponse>> ListJobs(IJobStore jobs)
@@ -56,7 +46,7 @@ public static class JobsApi
             : TypedResults.Ok(ToResponse(job));
     }
 
-    private static JobResponse ToResponse(JobRecord job)
+    internal static JobResponse ToResponse(JobRecord job)
     {
         return new JobResponse(
             job.Id,

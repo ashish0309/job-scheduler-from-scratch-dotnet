@@ -31,7 +31,7 @@ public sealed class JobSchedulerDbContext : DbContext, IDataAccessPolicyContext
 
     public DataAccessScope Scope => _dataAccessScopeProvider.Current;
 
-    public DataAccessOperation Operation => DataAccessOperation.Read;
+    public DataAccessOperation Operation => _dataAccessScopeProvider.CurrentOperation;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
