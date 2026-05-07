@@ -13,7 +13,7 @@ namespace JobSchedulerPrototype.Tests;
 public sealed class AppStartupTests
 {
     [Fact]
-    public void JobActionPostEndpointsUseDispatchedActionMetadata()
+    public void JobActionEndpointsUseDispatchedActionMetadata()
     {
         var databasePath = Path.Combine(
             Path.GetTempPath(),
@@ -23,7 +23,7 @@ public sealed class AppStartupTests
         {
             using var factory = new SqliteAppFactory($"Data Source={databasePath}");
 
-            var postEndpoints = factory.Services
+            var actionEndpoints = factory.Services
                 .GetServices<EndpointDataSource>()
                 .SelectMany(static endpointDataSource => endpointDataSource.Endpoints)
                 .OfType<RouteEndpoint>()
@@ -31,12 +31,14 @@ public sealed class AppStartupTests
                     endpoint.RoutePattern.RawText?.StartsWith("/api/jobs", StringComparison.Ordinal) == true)
                 .Where(static endpoint =>
                     endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()?.HttpMethods
-                        .Contains("POST", StringComparer.OrdinalIgnoreCase) == true)
+                        .Any(static method =>
+                            string.Equals(method, "GET", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(method, "POST", StringComparison.OrdinalIgnoreCase)) == true)
                 .ToArray();
 
-            Assert.NotEmpty(postEndpoints);
+            Assert.NotEmpty(actionEndpoints);
             Assert.All(
-                postEndpoints,
+                actionEndpoints,
                 endpoint => Assert.NotNull(
                     endpoint.Metadata.GetMetadata<DispatchedJobActionEndpointMetadata>()));
         }
@@ -73,9 +75,19 @@ public sealed class AppStartupTests
             Assert.IsType<JobActionDispatcher>(services.GetRequiredService<IJobActionDispatcher>());
             Assert.IsType<EnqueueJobAction>(
                 services.GetRequiredService<IJobActionHandler<EnqueueJobActionRequest, JobEnqueueResult>>());
+            Assert.IsType<ListJobsAction>(
+                services.GetRequiredService<IJobActionHandler<ListJobsActionRequest, ListJobsActionResult>>());
+            Assert.IsType<GetJobByIdAction>(
+                services.GetRequiredService<IJobActionHandler<GetJobByIdActionRequest, GetJobByIdActionResult>>());
             Assert.Contains(
                 services.GetServices<IJobEndpointDefinition>(),
                 definition => definition is EnqueueJobEndpointDefinition);
+            Assert.Contains(
+                services.GetServices<IJobEndpointDefinition>(),
+                definition => definition is ListJobsEndpointDefinition);
+            Assert.Contains(
+                services.GetServices<IJobEndpointDefinition>(),
+                definition => definition is GetJobByIdEndpointDefinition);
             Assert.IsType<DataAccessScopeProvider>(services.GetRequiredService<IDataAccessScopeProvider>());
             Assert.IsType<DataAccessPolicyFilterBuilder>(services.GetRequiredService<IDataAccessPolicyFilterBuilder>());
             Assert.IsType<JobDataAccessPolicy>(services.GetRequiredService<IDataAccessPolicy>());

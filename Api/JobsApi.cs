@@ -1,6 +1,5 @@
 using System.Text.Json;
 using JobSchedulerPrototype.Jobs;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobSchedulerPrototype.Api;
@@ -20,30 +19,7 @@ public static class JobsApi
             endpointDefinition.Map(group);
         }
 
-        group.MapGet("", ListJobs);
-        group.MapGet("/{id:guid}", GetJob);
-
         return group;
-    }
-
-    private static Ok<IReadOnlyCollection<JobResponse>> ListJobs(IJobStore jobs)
-    {
-        IReadOnlyCollection<JobResponse> response = jobs.List()
-            .Select(ToResponse)
-            .ToArray();
-
-        return TypedResults.Ok(response);
-    }
-
-    private static Results<Ok<JobResponse>, NotFound> GetJob(
-        Guid id,
-        IJobStore jobs)
-    {
-        var job = jobs.Get(id);
-
-        return job is null
-            ? TypedResults.NotFound()
-            : TypedResults.Ok(ToResponse(job));
     }
 
     internal static JobResponse ToResponse(JobRecord job)

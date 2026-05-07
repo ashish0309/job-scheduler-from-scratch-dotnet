@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Http.HttpResults;
 
 namespace JobSchedulerPrototype.Api;
 
-public sealed class EnqueueJobEndpointDefinition : JobActionEndpointDefinition<
+public sealed class EnqueueJobEndpointDefinition : JobEndpointDefinition<
     EnqueueJobRequest,
     JobEnqueueResult,
     Results<Accepted<JobResponse>, BadRequest<JobValidationError>>>
 {
+    protected override JobEndpointMethod Method => JobEndpointMethod.Post;
+
     protected override string Pattern => "";
 
     protected override IJobActionRequest<JobEnqueueResult> ToActionRequest(EnqueueJobRequest request)
