@@ -12,8 +12,9 @@ public sealed class QueuedJobWorkerTests
         var store = new InMemoryJobStore();
         var job = CreateJob();
         store.Add(job);
+        var actions = ActionDispatcher(store);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             new StubJobDispatcher(JobExecutionResult.Success()),
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -27,6 +28,12 @@ public sealed class QueuedJobWorkerTests
         Assert.NotNull(completedJob.StartedAt);
         Assert.NotNull(completedJob.CompletedAt);
         Assert.Null(completedJob.FailedAt);
+        Assert.Contains(
+            actions.DispatchedRequestTypes,
+            static requestType => requestType == typeof(ClaimNextDueJobActionRequest));
+        Assert.Contains(
+            actions.DispatchedRequestTypes,
+            static requestType => requestType == typeof(CompleteJobExecutionActionRequest));
     }
 
     [Fact]
@@ -36,9 +43,10 @@ public sealed class QueuedJobWorkerTests
         var job = CreateJob();
         var dataAccessScopeProvider = new FixedDataAccessScopeProvider(DataAccessScope.AllTenants());
         var dispatcher = new CapturingDataAccessScopeJobDispatcher(dataAccessScopeProvider);
+        var actions = ActionDispatcher(store);
         store.Add(job);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             dispatcher,
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero,
@@ -59,10 +67,11 @@ public sealed class QueuedJobWorkerTests
         var store = new InMemoryJobStore();
         var job = CreateJob();
         var dispatcher = new BlockingJobDispatcher();
+        var actions = ActionDispatcher(store);
         var leaseDuration = TimeSpan.FromMilliseconds(120);
         store.Add(job);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             dispatcher,
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero,
@@ -85,6 +94,7 @@ public sealed class QueuedJobWorkerTests
         dispatcher.Complete(JobExecutionResult.Success());
         Assert.True(await processingTask.WaitAsync(TimeSpan.FromSeconds(5)));
         Assert.Equal(JobStatus.Completed, store.Get(job.Id)?.Status);
+        Assert.True(actions.RenewLeaseDispatchCount > 0);
     }
 
     [Fact]
@@ -92,9 +102,10 @@ public sealed class QueuedJobWorkerTests
     {
         var store = new InMemoryJobStore();
         var job = CreateJob();
+        var actions = ActionDispatcher(store);
         store.Add(job);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             new StubJobDispatcher(JobExecutionResult.Failure("Simulated welcome email failure.")),
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -121,9 +132,10 @@ public sealed class QueuedJobWorkerTests
     {
         var store = new InMemoryJobStore();
         var job = CreateJob(maxAttempts: 1);
+        var actions = ActionDispatcher(store);
         store.Add(job);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             new StubJobDispatcher(JobExecutionResult.Failure("Simulated welcome email failure.")),
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -145,9 +157,10 @@ public sealed class QueuedJobWorkerTests
     {
         var store = new InMemoryJobStore();
         var job = CreateJob();
+        var actions = ActionDispatcher(store);
         store.Add(job);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             new ThrowingJobDispatcher(),
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -166,9 +179,10 @@ public sealed class QueuedJobWorkerTests
     {
         var store = new InMemoryJobStore();
         var job = CreateJob(maxAttempts: 1);
+        var actions = ActionDispatcher(store);
         store.Add(job);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             new ThrowingJobDispatcher(),
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -186,8 +200,9 @@ public sealed class QueuedJobWorkerTests
     public async Task ProcessNextJobAsyncReturnsFalseWhenNoQueuedJobExists()
     {
         var store = new InMemoryJobStore();
+        var actions = ActionDispatcher(store);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             new StubJobDispatcher(JobExecutionResult.Success()),
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -220,6 +235,11 @@ public sealed class QueuedJobWorkerTests
             store,
             DefinitionRegistry(),
             new TestJobActorProvider());
+    }
+
+    private static LifecycleBackedJobActionDispatcher ActionDispatcher(IJobStore store)
+    {
+        return new LifecycleBackedJobActionDispatcher(LifecycleService(store));
     }
 
     private static JsonElement Payload()
@@ -297,6 +317,63 @@ public sealed class QueuedJobWorkerTests
         {
             _executionStarted.SetResult();
             return _completion.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private sealed class LifecycleBackedJobActionDispatcher : IJobActionDispatcher
+    {
+        private readonly IJobLifecycleService _lifecycle;
+
+        public LifecycleBackedJobActionDispatcher(IJobLifecycleService lifecycle)
+        {
+            _lifecycle = lifecycle;
+        }
+
+        public List<Type> DispatchedRequestTypes { get; } = [];
+
+        public int RenewLeaseDispatchCount { get; private set; }
+
+        public Task<TResult> DispatchAsync<TResult>(
+            IJobActionRequest<TResult> request,
+            CancellationToken cancellationToken = default)
+        {
+            DispatchedRequestTypes.Add(request.GetType());
+
+            object result = request switch
+            {
+                ClaimNextDueJobActionRequest claimRequest => Claim(claimRequest),
+                RenewJobLeaseActionRequest renewRequest => Renew(renewRequest),
+                CompleteJobExecutionActionRequest completeRequest => Complete(completeRequest),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported test action request type '{request.GetType().Name}'.")
+            };
+
+            return Task.FromResult((TResult)result);
+        }
+
+        private ClaimNextDueJobActionResult Claim(ClaimNextDueJobActionRequest request)
+        {
+            var claimedJob = _lifecycle.ClaimNextDueJob(
+                request.Now,
+                request.WorkerId,
+                request.LeaseExpiresAt);
+            return ClaimNextDueJobActionResult.Authorized(claimedJob);
+        }
+
+        private RenewJobLeaseActionResult Renew(RenewJobLeaseActionRequest request)
+        {
+            RenewLeaseDispatchCount++;
+            var renewed = _lifecycle.RenewLease(
+                request.Job,
+                request.RenewedAt,
+                request.LeaseExpiresAt);
+            return RenewJobLeaseActionResult.Authorized(renewed);
+        }
+
+        private CompleteJobExecutionActionResult Complete(CompleteJobExecutionActionRequest request)
+        {
+            var completion = _lifecycle.CompleteExecution(request.Job, request.Result);
+            return CompleteJobExecutionActionResult.Authorized(completion);
         }
     }
 }

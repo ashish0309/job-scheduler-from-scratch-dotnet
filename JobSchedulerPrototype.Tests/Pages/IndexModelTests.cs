@@ -8,7 +8,7 @@ namespace JobSchedulerPrototype.Tests.Pages;
 public sealed class IndexModelTests
 {
     [Fact]
-    public void OnGetLoadsJobsAndStatusCounts()
+    public async Task OnGetLoadsJobsAndStatusCounts()
     {
         var store = new InMemoryJobStore();
         var completedJob = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
@@ -26,9 +26,9 @@ public sealed class IndexModelTests
         var failedRunningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
         Assert.NotNull(failedRunningJob);
         store.MarkFailed(failedJob.Id, failedRunningJob.CurrentStateChangeId, "SMTP server unavailable.");
-        var model = new IndexModel(store);
+        var model = new IndexModel(new StoreBackedJobActionDispatcher(store));
 
-        model.OnGet();
+        await model.OnGet(CancellationToken.None);
 
         Assert.Equal(4, model.Jobs.Count);
         Assert.Equal(1, model.QueuedCount);
@@ -138,5 +138,29 @@ public sealed class IndexModelTests
     {
         using var document = JsonDocument.Parse("""{"userId":"user_123"}""");
         return document.RootElement.Clone();
+    }
+
+    private sealed class StoreBackedJobActionDispatcher : IJobActionDispatcher
+    {
+        private readonly IJobStore _store;
+
+        public StoreBackedJobActionDispatcher(IJobStore store)
+        {
+            _store = store;
+        }
+
+        public Task<TResult> DispatchAsync<TResult>(
+            IJobActionRequest<TResult> request,
+            CancellationToken cancellationToken = default)
+        {
+            object response = request switch
+            {
+                ListJobsActionRequest => ListJobsActionResult.Authorized(_store.List()),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported request type '{request.GetType().Name}' in test dispatcher.")
+            };
+
+            return Task.FromResult((TResult)response);
+        }
     }
 }

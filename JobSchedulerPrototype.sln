@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobSchedulerPrototype", "Jo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobSchedulerPrototype.Tests", "JobSchedulerPrototype.Tests\JobSchedulerPrototype.Tests.csproj", "{D2F852F3-E34A-4DBC-A504-CD8C385A6E36}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobSchedulerPrototype.ArchitectureAnalyzers", "Analyzers\JobSchedulerPrototype.ArchitectureAnalyzers.csproj", "{33DF9FF6-22A8-4261-A254-E1CE8C3B3052}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,6 +22,10 @@ Global
 		{D2F852F3-E34A-4DBC-A504-CD8C385A6E36}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D2F852F3-E34A-4DBC-A504-CD8C385A6E36}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D2F852F3-E34A-4DBC-A504-CD8C385A6E36}.Release|Any CPU.Build.0 = Release|Any CPU
+		{33DF9FF6-22A8-4261-A254-E1CE8C3B3052}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{33DF9FF6-22A8-4261-A254-E1CE8C3B3052}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{33DF9FF6-22A8-4261-A254-E1CE8C3B3052}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{33DF9FF6-22A8-4261-A254-E1CE8C3B3052}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

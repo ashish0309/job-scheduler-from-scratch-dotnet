@@ -79,6 +79,12 @@ public sealed class AppStartupTests
                 services.GetRequiredService<IJobActionHandler<ListJobsActionRequest, ListJobsActionResult>>());
             Assert.IsType<GetJobByIdAction>(
                 services.GetRequiredService<IJobActionHandler<GetJobByIdActionRequest, GetJobByIdActionResult>>());
+            Assert.IsType<ClaimNextDueJobAction>(
+                services.GetRequiredService<IJobActionHandler<ClaimNextDueJobActionRequest, ClaimNextDueJobActionResult>>());
+            Assert.IsType<RenewJobLeaseAction>(
+                services.GetRequiredService<IJobActionHandler<RenewJobLeaseActionRequest, RenewJobLeaseActionResult>>());
+            Assert.IsType<CompleteJobExecutionAction>(
+                services.GetRequiredService<IJobActionHandler<CompleteJobExecutionActionRequest, CompleteJobExecutionActionResult>>());
             Assert.Contains(
                 services.GetServices<IJobEndpointDefinition>(),
                 definition => definition is EnqueueJobEndpointDefinition);

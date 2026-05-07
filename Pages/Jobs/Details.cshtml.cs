@@ -6,18 +6,26 @@ namespace JobSchedulerPrototype.Pages.Jobs;
 
 public class DetailsModel : PageModel
 {
-    private readonly IJobStore _jobs;
+    private readonly IJobActionDispatcher _actions;
 
-    public DetailsModel(IJobStore jobs)
+    public DetailsModel(IJobActionDispatcher actions)
     {
-        _jobs = jobs;
+        _actions = actions;
     }
 
     public JobDetails? Job { get; private set; }
 
-    public IActionResult OnGet(Guid id)
+    public async Task<IActionResult> OnGet(Guid id, CancellationToken cancellationToken)
     {
-        var job = _jobs.Get(id);
+        var result = await _actions.DispatchAsync(
+            new GetJobByIdActionRequest(id),
+            cancellationToken);
+        if (!result.IsAuthorized)
+        {
+            return Forbid();
+        }
+
+        var job = result.Job;
         if (job is null)
         {
             return NotFound();

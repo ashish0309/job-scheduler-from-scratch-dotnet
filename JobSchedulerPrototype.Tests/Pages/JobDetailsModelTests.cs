@@ -10,7 +10,7 @@ namespace JobSchedulerPrototype.Tests.Pages;
 public sealed class JobDetailsModelTests
 {
     [Fact]
-    public void OnGetLoadsJobDetails()
+    public async Task OnGetLoadsJobDetails()
     {
         var store = new InMemoryJobStore();
         var job = JobRecord.Enqueue(
@@ -25,9 +25,9 @@ public sealed class JobDetailsModelTests
         var runningJob = store.TryClaimNextDueJob(new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero), "worker-1", (new DateTimeOffset(2026, 5, 4, 10, 5, 0, TimeSpan.Zero)).AddMinutes(1));
         Assert.NotNull(runningJob);
         store.MarkCompleted(job.Id, runningJob.CurrentStateChangeId);
-        var model = new DetailsModel(store);
+        var model = new DetailsModel(new StoreBackedJobActionDispatcher(store));
 
-        var result = model.OnGet(job.Id);
+        var result = await model.OnGet(job.Id, CancellationToken.None);
 
         Assert.IsType<PageResult>(result);
         Assert.NotNull(model.Job);
@@ -49,13 +49,25 @@ public sealed class JobDetailsModelTests
     }
 
     [Fact]
-    public void OnGetReturnsNotFoundWhenJobDoesNotExist()
+    public async Task OnGetReturnsNotFoundWhenJobDoesNotExist()
     {
-        var model = new DetailsModel(new InMemoryJobStore());
+        var model = new DetailsModel(new StoreBackedJobActionDispatcher(new InMemoryJobStore()));
 
-        var result = model.OnGet(Guid.NewGuid());
+        var result = await model.OnGet(Guid.NewGuid(), CancellationToken.None);
 
         Assert.IsType<NotFoundResult>(result);
+        Assert.Null(model.Job);
+    }
+
+    [Fact]
+    public async Task OnGetReturnsForbidWhenActorIsUnauthorized()
+    {
+        var store = new InMemoryJobStore();
+        var model = new DetailsModel(new StoreBackedJobActionDispatcher(store, isAuthorized: false));
+
+        var result = await model.OnGet(Guid.NewGuid(), CancellationToken.None);
+
+        Assert.IsType<ForbidResult>(result);
         Assert.Null(model.Job);
     }
 
@@ -64,5 +76,36 @@ public sealed class JobDetailsModelTests
         using var document = JsonDocument.Parse(
             """{"userId":"user_123","email":"person@example.com"}""");
         return document.RootElement.Clone();
+    }
+
+    private sealed class StoreBackedJobActionDispatcher : IJobActionDispatcher
+    {
+        private readonly IJobStore _store;
+        private readonly bool _isAuthorized;
+
+        public StoreBackedJobActionDispatcher(
+            IJobStore store,
+            bool isAuthorized = true)
+        {
+            _store = store;
+            _isAuthorized = isAuthorized;
+        }
+
+        public Task<TResult> DispatchAsync<TResult>(
+            IJobActionRequest<TResult> request,
+            CancellationToken cancellationToken = default)
+        {
+            object response = request switch
+            {
+                GetJobByIdActionRequest getByIdRequest when _isAuthorized =>
+                    GetJobByIdActionResult.Authorized(_store.Get(getByIdRequest.Id)),
+                GetJobByIdActionRequest =>
+                    GetJobByIdActionResult.Denied("Actor is not authorized to read jobs."),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported request type '{request.GetType().Name}' in test dispatcher.")
+            };
+
+            return Task.FromResult((TResult)response);
+        }
     }
 }

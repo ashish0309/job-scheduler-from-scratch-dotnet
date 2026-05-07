@@ -4,7 +4,7 @@ namespace JobSchedulerPrototype.Jobs;
 
 public sealed class QueuedJobWorker : IJobWorker
 {
-    private readonly IJobLifecycleService _lifecycle;
+    private readonly IJobActionDispatcher _actions;
     private readonly IJobDispatcher _dispatcher;
     private readonly IDataAccessScopeProvider _dataAccessScopeProvider;
     private readonly ILogger<QueuedJobWorker> _logger;
@@ -13,13 +13,13 @@ public sealed class QueuedJobWorker : IJobWorker
     private readonly TimeSpan _leaseRenewalInterval;
 
     public QueuedJobWorker(
-        IJobLifecycleService lifecycle,
+        IJobActionDispatcher actions,
         IJobDispatcher dispatcher,
         ILogger<QueuedJobWorker> logger,
         IOptions<JobWorkerOptions> options,
         IDataAccessScopeProvider dataAccessScopeProvider)
         : this(
-            lifecycle,
+            actions,
             dispatcher,
             logger,
             options.Value.ValidSimulatedWorkDuration,
@@ -29,12 +29,12 @@ public sealed class QueuedJobWorker : IJobWorker
     }
 
     public QueuedJobWorker(
-        IJobLifecycleService lifecycle,
+        IJobActionDispatcher actions,
         IJobDispatcher dispatcher,
         ILogger<QueuedJobWorker> logger,
         IOptions<JobWorkerOptions> options)
         : this(
-            lifecycle,
+            actions,
             dispatcher,
             logger,
             options,
@@ -43,22 +43,22 @@ public sealed class QueuedJobWorker : IJobWorker
     }
 
     public QueuedJobWorker(
-        IJobLifecycleService lifecycle,
+        IJobActionDispatcher actions,
         IJobDispatcher dispatcher,
         ILogger<QueuedJobWorker> logger,
         TimeSpan simulatedWorkDuration)
-        : this(lifecycle, dispatcher, logger, simulatedWorkDuration, TimeSpan.FromSeconds(60))
+        : this(actions, dispatcher, logger, simulatedWorkDuration, TimeSpan.FromSeconds(60))
     {
     }
 
     public QueuedJobWorker(
-        IJobLifecycleService lifecycle,
+        IJobActionDispatcher actions,
         IJobDispatcher dispatcher,
         ILogger<QueuedJobWorker> logger,
         TimeSpan simulatedWorkDuration,
         TimeSpan leaseDuration)
         : this(
-            lifecycle,
+            actions,
             dispatcher,
             logger,
             simulatedWorkDuration,
@@ -68,14 +68,14 @@ public sealed class QueuedJobWorker : IJobWorker
     }
 
     public QueuedJobWorker(
-        IJobLifecycleService lifecycle,
+        IJobActionDispatcher actions,
         IJobDispatcher dispatcher,
         ILogger<QueuedJobWorker> logger,
         TimeSpan simulatedWorkDuration,
         TimeSpan leaseDuration,
         IDataAccessScopeProvider dataAccessScopeProvider)
     {
-        _lifecycle = lifecycle;
+        _actions = actions;
         _dispatcher = dispatcher;
         _dataAccessScopeProvider = dataAccessScopeProvider;
         _logger = logger;
@@ -87,12 +87,27 @@ public sealed class QueuedJobWorker : IJobWorker
     public async Task<bool> ProcessNextJobAsync(string workerId, CancellationToken cancellationToken)
     {
         var now = DateTimeOffset.UtcNow;
-        JobRecord? job;
+        ClaimNextDueJobActionResult claimResult;
         using (_dataAccessScopeProvider.BeginScope(DataAccessScope.AllTenants()))
         {
-            job = _lifecycle.ClaimNextDueJob(now, workerId, now.Add(_leaseDuration));
+            claimResult = await _actions.DispatchAsync(
+                new ClaimNextDueJobActionRequest(
+                    now,
+                    workerId,
+                    now.Add(_leaseDuration)),
+                cancellationToken);
         }
 
+        if (!claimResult.IsAuthorized)
+        {
+            _logger.LogError(
+                "Worker {WorkerId} was not authorized to claim jobs: {ErrorMessage}",
+                workerId,
+                claimResult.ErrorMessage);
+            return false;
+        }
+
+        var job = claimResult.Job;
         if (job is null)
         {
             return false;
@@ -125,11 +140,27 @@ public sealed class QueuedJobWorker : IJobWorker
             await StopLeaseRenewal(leaseRenewalCancellation, leaseRenewalTask);
         }
 
-        JobExecutionCompletion completion;
+        CompleteJobExecutionActionResult completionResult;
         using (_dataAccessScopeProvider.BeginScope(DataAccessScope.AllTenants()))
         {
-            completion = _lifecycle.CompleteExecution(job, result);
+            completionResult = await _actions.DispatchAsync(
+                new CompleteJobExecutionActionRequest(job, result),
+                cancellationToken);
         }
+
+        if (!completionResult.IsAuthorized)
+        {
+            _logger.LogError(
+                "Worker {WorkerId} was not authorized to complete job {JobId}: {ErrorMessage}",
+                workerId,
+                job.Id,
+                completionResult.ErrorMessage);
+            return true;
+        }
+
+        var completion = completionResult.Completion
+            ?? throw new InvalidOperationException(
+                $"Completion action did not provide a completion result for job '{job.Id}'.");
 
         if (completion.Status == JobExecutionCompletionStatus.Completed)
         {
@@ -214,12 +245,26 @@ public sealed class QueuedJobWorker : IJobWorker
                 await Task.Delay(_leaseRenewalInterval, cancellationToken);
 
                 var renewedAt = DateTimeOffset.UtcNow;
-                var renewed = _lifecycle.RenewLease(
-                    job,
-                    renewedAt,
-                    renewedAt.Add(_leaseDuration));
+                var renewalResult = await _actions.DispatchAsync(
+                    new RenewJobLeaseActionRequest(
+                        job,
+                        renewedAt,
+                        renewedAt.Add(_leaseDuration)),
+                    cancellationToken);
 
-                if (!renewed)
+                if (!renewalResult.IsAuthorized)
+                {
+                    _logger.LogError(
+                        "Worker {WorkerId} was not authorized to renew lease for job {JobId} type={JobType} attempt={AttemptNumber}: {ErrorMessage}",
+                        workerId,
+                        job.Id,
+                        job.Type,
+                        job.AttemptCount,
+                        renewalResult.ErrorMessage);
+                    return;
+                }
+
+                if (!renewalResult.Renewed)
                 {
                     _logger.LogWarning(
                         "Worker {WorkerId} could not renew lease for job {JobId} type={JobType} attempt={AttemptNumber}",

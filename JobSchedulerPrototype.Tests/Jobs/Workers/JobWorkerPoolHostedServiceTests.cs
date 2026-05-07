@@ -18,8 +18,9 @@ public sealed class JobWorkerPoolHostedServiceTests
             PollIntervalSeconds = 1,
             SimulatedWorkDurationSeconds = 0
         });
+        var actions = ActionDispatcher(store);
         var worker = new QueuedJobWorker(
-            LifecycleService(store),
+            actions,
             dispatcher,
             NullLogger<QueuedJobWorker>.Instance,
             simulatedWorkDuration: TimeSpan.Zero);
@@ -84,6 +85,11 @@ public sealed class JobWorkerPoolHostedServiceTests
             store,
             new JobDefinitionRegistry([new SendWelcomeEmailJobDefinition()]),
             new TestJobActorProvider());
+    }
+
+    private static IJobActionDispatcher ActionDispatcher(IJobStore store)
+    {
+        return new LifecycleBackedJobActionDispatcher(LifecycleService(store));
     }
 
     private static JsonElement Payload()
@@ -183,6 +189,56 @@ public sealed class JobWorkerPoolHostedServiceTests
 
             _successfulExecutionCompleted.SetResult();
             return Task.FromResult(false);
+        }
+    }
+
+    private sealed class LifecycleBackedJobActionDispatcher : IJobActionDispatcher
+    {
+        private readonly IJobLifecycleService _lifecycle;
+
+        public LifecycleBackedJobActionDispatcher(IJobLifecycleService lifecycle)
+        {
+            _lifecycle = lifecycle;
+        }
+
+        public Task<TResult> DispatchAsync<TResult>(
+            IJobActionRequest<TResult> request,
+            CancellationToken cancellationToken = default)
+        {
+            object result = request switch
+            {
+                ClaimNextDueJobActionRequest claimRequest => Claim(claimRequest),
+                RenewJobLeaseActionRequest renewRequest => Renew(renewRequest),
+                CompleteJobExecutionActionRequest completeRequest => Complete(completeRequest),
+                _ => throw new InvalidOperationException(
+                    $"Unsupported test action request type '{request.GetType().Name}'.")
+            };
+
+            return Task.FromResult((TResult)result);
+        }
+
+        private ClaimNextDueJobActionResult Claim(ClaimNextDueJobActionRequest request)
+        {
+            var claimedJob = _lifecycle.ClaimNextDueJob(
+                request.Now,
+                request.WorkerId,
+                request.LeaseExpiresAt);
+            return ClaimNextDueJobActionResult.Authorized(claimedJob);
+        }
+
+        private RenewJobLeaseActionResult Renew(RenewJobLeaseActionRequest request)
+        {
+            var renewed = _lifecycle.RenewLease(
+                request.Job,
+                request.RenewedAt,
+                request.LeaseExpiresAt);
+            return RenewJobLeaseActionResult.Authorized(renewed);
+        }
+
+        private CompleteJobExecutionActionResult Complete(CompleteJobExecutionActionRequest request)
+        {
+            var completion = _lifecycle.CompleteExecution(request.Job, request.Result);
+            return CompleteJobExecutionActionResult.Authorized(completion);
         }
     }
 }

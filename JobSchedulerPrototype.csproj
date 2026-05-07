@@ -11,6 +11,10 @@
     <Content Remove="JobSchedulerPrototype.Tests/**/*" />
     <EmbeddedResource Remove="JobSchedulerPrototype.Tests/**/*" />
     <None Remove="JobSchedulerPrototype.Tests/**/*" />
+    <Compile Remove="Analyzers/**/*.cs" />
+    <Content Remove="Analyzers/**/*" />
+    <EmbeddedResource Remove="Analyzers/**/*" />
+    <None Remove="Analyzers/**/*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,6 +23,12 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="Analyzers/JobSchedulerPrototype.ArchitectureAnalyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

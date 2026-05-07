@@ -5,11 +5,11 @@ namespace JobSchedulerPrototype.Pages;
 
 public class IndexModel : PageModel
 {
-    private readonly IJobStore _jobs;
+    private readonly IJobActionDispatcher _actions;
 
-    public IndexModel(IJobStore jobs)
+    public IndexModel(IJobActionDispatcher actions)
     {
-        _jobs = jobs;
+        _actions = actions;
     }
 
     public IReadOnlyCollection<JobSummary> Jobs { get; private set; } = [];
@@ -22,11 +22,15 @@ public class IndexModel : PageModel
 
     public int FailedCount => Jobs.Count(job => job.Status == JobStatus.Failed);
 
-    public void OnGet()
+    public async Task OnGet(CancellationToken cancellationToken)
     {
-        Jobs = _jobs.List()
-            .Select(JobSummary.From)
-            .ToArray();
+        var result = await _actions.DispatchAsync(
+            new ListJobsActionRequest(),
+            cancellationToken);
+
+        Jobs = result.IsAuthorized
+            ? result.Jobs.Select(JobSummary.From).ToArray()
+            : [];
     }
 }
 
