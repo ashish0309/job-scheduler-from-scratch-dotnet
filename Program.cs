@@ -19,6 +19,8 @@ builder.Services.AddSingleton<SqliteJobStore>();
 builder.Services.AddSingleton<IJobStore>(services => services.GetRequiredService<SqliteJobStore>());
 builder.Services.AddSingleton<IJobDefinition, SendWelcomeEmailJobDefinition>();
 builder.Services.AddSingleton<IJobDefinitionRegistry, JobDefinitionRegistry>();
+builder.Services.Configure<DevelopmentActorOptions>(
+    builder.Configuration.GetSection(DevelopmentActorOptions.SectionName));
 builder.Services.AddSingleton<IJobActorProvider, DevelopmentHeaderJobActorProvider>();
 builder.Services.AddSingleton<IJobAuthorizationRuleEvaluator, JobAuthorizationRuleEvaluator>();
 builder.Services.AddJobActions();

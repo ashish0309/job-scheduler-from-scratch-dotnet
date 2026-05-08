@@ -46,6 +46,8 @@ else
             <thead>
                 <tr>
                     <th scope="col">Job</th>
+                    <th scope="col">Tenant</th>
+                    <th scope="col">Created by</th>
                     <th scope="col">Status</th>
                     <th scope="col">Attempts</th>
                     <th scope="col">Scheduled</th>
@@ -63,6 +65,8 @@ else
                             <div class="job-type">@job.Type</div>
                             <a class="job-id" asp-page="/Jobs/Details" asp-route-id="@job.Id">@job.Id</a>
                         </td>
+                        <td class="job-meta">@job.TenantId</td>
+                        <td class="job-meta">@job.CreatedByActorId</td>
                         <td>
                             <span class="status-badge status-@job.Status.ToString().ToLowerInvariant()">@job.Status</span>
                         </td>

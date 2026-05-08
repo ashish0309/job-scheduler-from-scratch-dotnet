@@ -8,7 +8,7 @@ public sealed class ActionDataAccessOperationTests
     [Fact]
     public async Task EnqueueActionExecutesUnderMutateOperationAndActorTenantScope()
     {
-        var scopeProvider = ScopeProvider();
+        var scopeProvider = ScopeProvider(JobPermissions.EmailEnqueue);
         var store = new ScopeCapturingJobStore(scopeProvider);
         var action = new EnqueueJobAction(
             store,
@@ -31,7 +31,7 @@ public sealed class ActionDataAccessOperationTests
     [Fact]
     public async Task ListActionExecutesUnderReadOperationAndActorTenantScope()
     {
-        var scopeProvider = ScopeProvider();
+        var scopeProvider = ScopeProvider(JobPermissions.EmailRead);
         var store = new ScopeCapturingJobStore(scopeProvider);
         var action = new ListJobsAction(
             store,
@@ -48,9 +48,55 @@ public sealed class ActionDataAccessOperationTests
     }
 
     [Fact]
+    public async Task ListActionExecutesUnderReadOperationAndAllTenantsScopeForGlobalReader()
+    {
+        var scopeProvider = ScopeProvider(
+            JobPermissions.EmailRead,
+            JobPermissions.GlobalRead);
+        var store = new ScopeCapturingJobStore(scopeProvider);
+        var action = new ListJobsAction(
+            store,
+            new TestJobActorProvider(new JobActor(
+                TestJobActorProvider.ActorId,
+                TestJobActorProvider.TenantId,
+                [JobPermissions.EmailRead, JobPermissions.GlobalRead])),
+            new JobAuthorizationRuleEvaluator(),
+            scopeProvider);
+
+        _ = await action.ExecuteAsync(new ListJobsActionRequest());
+
+        Assert.Equal(global::JobSchedulerPrototype.Jobs.DataAccessOperation.Read, store.CapturedOperation);
+        Assert.NotNull(store.CapturedScope);
+        Assert.True(store.CapturedScope!.IncludesAllTenants);
+    }
+
+    [Fact]
+    public async Task GetByIdActionExecutesUnderReadOperationAndAllTenantsScopeForGlobalReader()
+    {
+        var scopeProvider = ScopeProvider(
+            JobPermissions.EmailRead,
+            JobPermissions.GlobalRead);
+        var store = new ScopeCapturingJobStore(scopeProvider);
+        var action = new GetJobByIdAction(
+            store,
+            new TestJobActorProvider(new JobActor(
+                TestJobActorProvider.ActorId,
+                TestJobActorProvider.TenantId,
+                [JobPermissions.EmailRead, JobPermissions.GlobalRead])),
+            new JobAuthorizationRuleEvaluator(),
+            scopeProvider);
+
+        _ = await action.ExecuteAsync(new GetJobByIdActionRequest(Guid.NewGuid()));
+
+        Assert.Equal(global::JobSchedulerPrototype.Jobs.DataAccessOperation.Read, store.CapturedOperation);
+        Assert.NotNull(store.CapturedScope);
+        Assert.True(store.CapturedScope!.IncludesAllTenants);
+    }
+
+    [Fact]
     public async Task ClaimActionExecutesUnderMutateOperationAndAllTenantsScope()
     {
-        var scopeProvider = ScopeProvider();
+        var scopeProvider = ScopeProvider(JobPermissions.Execute);
         var lifecycle = new ScopeCapturingLifecycleService(scopeProvider);
         var action = new ClaimNextDueJobAction(
             lifecycle,
@@ -69,14 +115,14 @@ public sealed class ActionDataAccessOperationTests
         Assert.True(lifecycle.CapturedScope!.IncludesAllTenants);
     }
 
-    private static IDataAccessScopeProvider ScopeProvider()
+    private static IDataAccessScopeProvider ScopeProvider(params string[] permissions)
     {
         return new FixedDataAccessScopeProvider(
             DataAccessScope.Tenant(TestJobActorProvider.TenantId),
             new JobActor(
                 TestJobActorProvider.ActorId,
                 TestJobActorProvider.TenantId,
-                [JobPermissions.All]));
+                permissions));
     }
 
     private static JsonElement Payload()

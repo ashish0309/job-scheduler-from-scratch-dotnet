@@ -6,14 +6,19 @@ internal sealed class TestDataAccessPolicyContext : IDataAccessPolicyContext
 {
     public TestDataAccessPolicyContext(
         DataAccessScope scope,
-        DataAccessOperation operation = DataAccessOperation.Read)
+        DataAccessOperation operation = DataAccessOperation.Read,
+        JobActor? actor = null)
     {
         Scope = scope;
         Operation = operation;
+        Actor = actor
+            ?? new JobActor(
+                TestJobActorProvider.ActorId,
+                TestJobActorProvider.TenantId,
+                [JobPermissions.All]);
     }
 
-    public JobActor Actor { get; } =
-        new(TestJobActorProvider.ActorId, TestJobActorProvider.TenantId, [JobPermissions.All]);
+    public JobActor Actor { get; }
 
     public DataAccessScope Scope { get; }
 

@@ -24,6 +24,15 @@ public sealed class GetJobByIdAction : JobAuthorizedAction<GetJobByIdActionReque
         ];
     }
 
+    protected override DataAccessScope BuildDataAccessScope(
+        GetJobByIdActionRequest request,
+        JobActor actor)
+    {
+        return actor.Permissions.Contains(JobPermissions.GlobalRead)
+            ? DataAccessScope.AllTenants()
+            : DataAccessScope.Tenant(actor.TenantId);
+    }
+
     protected override GetJobByIdActionResult OnAuthorizationDenied(JobAuthorizationResult result)
     {
         return GetJobByIdActionResult.Denied(

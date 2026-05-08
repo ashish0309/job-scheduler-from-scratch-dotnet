@@ -206,6 +206,132 @@ public sealed class JobsApiTests
     }
 
     [Fact]
+    public async Task GetJobsShowsOnlyOwnerJobsWhenActorHasReadWithoutManagePermission()
+    {
+        await using var factory = new JobsApiFactory(useSqliteStore: true);
+        using var client = factory.CreateClient();
+        var tenantId = TestJobActorProvider.TenantId;
+        var actorAlpha = "owner-alpha";
+        var actorBeta = "owner-beta";
+        var actorPermissions = JobPermissions.EmailRead + "," + JobPermissions.EmailEnqueue;
+        var alphaJob = await PostJobForActor(
+            client,
+            tenantId,
+            actorAlpha,
+            actorPermissions,
+            "alpha_user");
+        var betaJob = await PostJobForActor(
+            client,
+            tenantId,
+            actorBeta,
+            actorPermissions,
+            "beta_user");
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/jobs");
+        AddActorHeaders(
+            listRequest,
+            tenantId,
+            actorAlpha,
+            JobPermissions.EmailRead);
+        var listResponse = await client.SendAsync(listRequest);
+        var otherOwnerDetailRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/jobs/{betaJob.Id}");
+        AddActorHeaders(
+            otherOwnerDetailRequest,
+            tenantId,
+            actorAlpha,
+            JobPermissions.EmailRead);
+        var otherOwnerDetailResponse = await client.SendAsync(otherOwnerDetailRequest);
+
+        listResponse.EnsureSuccessStatusCode();
+        var jobs = await listResponse.Content.ReadFromJsonAsync<JobResponse[]>();
+        Assert.NotNull(jobs);
+        var listedJob = Assert.Single(jobs);
+        Assert.Equal(alphaJob.Id, listedJob.Id);
+        Assert.Equal(HttpStatusCode.NotFound, otherOwnerDetailResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetJobsShowsAllTenantJobsWhenActorHasManagePermission()
+    {
+        await using var factory = new JobsApiFactory(useSqliteStore: true);
+        using var client = factory.CreateClient();
+        var tenantId = TestJobActorProvider.TenantId;
+        var actorPermissions = JobPermissions.EmailRead + "," + JobPermissions.EmailEnqueue;
+        await PostJobForActor(
+            client,
+            tenantId,
+            "owner-alpha",
+            actorPermissions,
+            "alpha_user");
+        await PostJobForActor(
+            client,
+            tenantId,
+            "owner-beta",
+            actorPermissions,
+            "beta_user");
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/jobs");
+        AddActorHeaders(
+            listRequest,
+            tenantId,
+            actorId: "manager-alpha",
+            permissions: JobPermissions.EmailRead + "," + JobPermissions.EmailManage);
+        var listResponse = await client.SendAsync(listRequest);
+
+        listResponse.EnsureSuccessStatusCode();
+        var jobs = await listResponse.Content.ReadFromJsonAsync<JobResponse[]>();
+        Assert.NotNull(jobs);
+        Assert.Equal(2, jobs.Length);
+    }
+
+    [Fact]
+    public async Task GetJobsAndGetJobSupportGlobalReadAcrossTenantsWithSqliteStore()
+    {
+        await using var factory = new JobsApiFactory(useSqliteStore: true);
+        using var client = factory.CreateClient();
+        var tenantAlphaJob = await PostJobForTenant(
+            client,
+            TestJobActorProvider.TenantId,
+            "user_alpha");
+        var tenantBetaJob = await PostJobForTenant(
+            client,
+            "tenant-beta",
+            "user_beta");
+
+        using var listRequest = new HttpRequestMessage(HttpMethod.Get, "/api/jobs");
+        AddActorHeaders(
+            listRequest,
+            TestJobActorProvider.TenantId,
+            actorId: "service-user",
+            permissions: JobPermissions.EmailRead + "," + JobPermissions.GlobalRead);
+        var listResponse = await client.SendAsync(listRequest);
+
+        var crossTenantDetailRequest = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"/api/jobs/{tenantBetaJob.Id}");
+        AddActorHeaders(
+            crossTenantDetailRequest,
+            TestJobActorProvider.TenantId,
+            actorId: "service-user",
+            permissions: JobPermissions.EmailRead + "," + JobPermissions.GlobalRead);
+        var crossTenantDetailResponse = await client.SendAsync(crossTenantDetailRequest);
+
+        listResponse.EnsureSuccessStatusCode();
+        var jobs = await listResponse.Content.ReadFromJsonAsync<JobResponse[]>();
+        Assert.NotNull(jobs);
+        Assert.Equal(2, jobs.Length);
+        Assert.Contains(jobs, job => job.Id == tenantAlphaJob.Id);
+        Assert.Contains(jobs, job => job.Id == tenantBetaJob.Id);
+
+        crossTenantDetailResponse.EnsureSuccessStatusCode();
+        var crossTenantJob = await crossTenantDetailResponse.Content.ReadFromJsonAsync<JobResponse>();
+        Assert.NotNull(crossTenantJob);
+        Assert.Equal(tenantBetaJob.Id, crossTenantJob.Id);
+    }
+
+    [Fact]
     public async Task GetJobReturnsFailureReasonWhenJobFailed()
     {
         var jobId = Guid.NewGuid();
@@ -456,14 +582,58 @@ public sealed class JobsApiTests
         return job;
     }
 
+    private static async Task<JobResponse> PostJobForActor(
+        HttpClient client,
+        string tenantId,
+        string actorId,
+        string permissions,
+        string userId)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/jobs")
+        {
+            Content = JsonContent.Create(new
+            {
+                type = "send-welcome-email",
+                payload = new
+                {
+                    userId,
+                    email = $"{userId}@example.com"
+                }
+            })
+        };
+        AddActorHeaders(request, tenantId, actorId, permissions);
+
+        var response = await client.SendAsync(request);
+
+        response.EnsureSuccessStatusCode();
+        var job = await response.Content.ReadFromJsonAsync<JobResponse>();
+        Assert.NotNull(job);
+        return job;
+    }
+
     private static void AddActorHeaders(HttpRequestMessage request, string tenantId)
+    {
+        AddActorHeaders(request, tenantId, actorId: $"{tenantId}-user", permissions: null);
+    }
+
+    private static void AddActorHeaders(
+        HttpRequestMessage request,
+        string tenantId,
+        string actorId,
+        string? permissions)
     {
         request.Headers.Add(
             DevelopmentHeaderJobActorProvider.ActorIdHeaderName,
-            $"{tenantId}-user");
+            actorId);
         request.Headers.Add(
             DevelopmentHeaderJobActorProvider.TenantIdHeaderName,
             tenantId);
+        if (!string.IsNullOrWhiteSpace(permissions))
+        {
+            request.Headers.Add(
+                DevelopmentHeaderJobActorProvider.PermissionsHeaderName,
+                permissions);
+        }
     }
 
     private sealed class JobsApiFactory : WebApplicationFactory<Program>

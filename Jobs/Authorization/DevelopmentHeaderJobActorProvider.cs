@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 
 namespace JobSchedulerPrototype.Jobs;
 
@@ -14,32 +15,51 @@ public sealed class DevelopmentHeaderJobActorProvider : IJobActorProvider
     private static readonly string[] DefaultPermissions = [JobPermissions.All];
 
     private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IOptions<DevelopmentActorOptions> _options;
 
-    public DevelopmentHeaderJobActorProvider(IHttpContextAccessor httpContextAccessor)
+    public DevelopmentHeaderJobActorProvider(
+        IHttpContextAccessor httpContextAccessor,
+        IOptions<DevelopmentActorOptions> options)
     {
         _httpContextAccessor = httpContextAccessor;
+        _options = options;
     }
 
     public JobActor GetCurrentActor()
     {
+        var configuredActor = ConfiguredActor();
+        if (!_options.Value.AllowRequestHeaders)
+        {
+            return configuredActor;
+        }
+
         var request = _httpContextAccessor.HttpContext?.Request;
         if (request is null)
         {
-            return DefaultActor();
+            return configuredActor;
         }
 
         return new JobActor(
-            ReadHeaderOrDefault(request, ActorIdHeaderName, DefaultActorId),
-            ReadHeaderOrDefault(request, TenantIdHeaderName, DefaultTenantId),
-            ReadPermissionsOrDefault(request));
+            ReadHeaderOrDefault(request, ActorIdHeaderName, configuredActor.Id),
+            ReadHeaderOrDefault(request, TenantIdHeaderName, configuredActor.TenantId),
+            ReadPermissionsOrDefault(request, configuredActor.Permissions));
     }
 
-    private static JobActor DefaultActor()
+    private JobActor ConfiguredActor()
     {
+        var configuredPermissions = _options.Value.Permissions is null
+            || _options.Value.Permissions.Length == 0
+            ? DefaultPermissions
+            : _options.Value.Permissions;
+
         return new JobActor(
-            DefaultActorId,
-            DefaultTenantId,
-            DefaultPermissions);
+            string.IsNullOrWhiteSpace(_options.Value.ActorId)
+                ? DefaultActorId
+                : _options.Value.ActorId.Trim(),
+            string.IsNullOrWhiteSpace(_options.Value.TenantId)
+                ? DefaultTenantId
+                : _options.Value.TenantId.Trim(),
+            configuredPermissions);
     }
 
     private static string ReadHeaderOrDefault(
@@ -54,12 +74,14 @@ public sealed class DevelopmentHeaderJobActorProvider : IJobActorProvider
             : value.Trim();
     }
 
-    private static IEnumerable<string> ReadPermissionsOrDefault(HttpRequest request)
+    private static IEnumerable<string> ReadPermissionsOrDefault(
+        HttpRequest request,
+        IEnumerable<string> defaultPermissions)
     {
         var permissions = request.Headers[PermissionsHeaderName].ToString();
         if (string.IsNullOrWhiteSpace(permissions))
         {
-            return DefaultPermissions;
+            return defaultPermissions;
         }
 
         return permissions.Split(

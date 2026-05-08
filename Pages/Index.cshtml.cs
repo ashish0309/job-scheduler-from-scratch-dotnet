@@ -36,6 +36,8 @@ public class IndexModel : PageModel
 
 public sealed record JobSummary(
     Guid Id,
+    string TenantId,
+    string CreatedByActorId,
     string Type,
     JobStatus Status,
     Guid CurrentStateChangeId,
@@ -58,6 +60,8 @@ public sealed record JobSummary(
     {
         return new JobSummary(
             job.Id,
+            job.TenantId,
+            job.CreatedByActorId,
             job.Type,
             job.Status,
             job.CurrentStateChangeId,

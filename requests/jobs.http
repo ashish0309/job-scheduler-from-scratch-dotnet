@@ -1,7 +1,7 @@
 @baseUrl = http://localhost:5088
-@actorId = user-123
+@actorId = service-user
 @tenantId = tenant-alpha
-@permissions = jobs.*
+@permissions = jobs.email.read,jobs.global.read,jobs.email.enqueue
 
 ### Enqueue a supported job
 POST {{baseUrl}}/api/jobs
@@ -138,5 +138,135 @@ Content-Type: application/json
   "type": "send-welcome-email",
   "payload": {
     "userId": "user_123"
+  }
+}
+
+### ------------------------------------------------------------
+### Manual Auth + Visibility Test Matrix
+### ------------------------------------------------------------
+### Notes:
+### 1) Run the setup requests first and copy IDs into @ownerAJobId, @ownerBJobId, @tenantBJobId.
+### 2) Expected outcomes are listed before each request.
+### 3) Current model: read requires jobs.email.read. Within a tenant:
+###    - owner can read own jobs
+###    - jobs.email.manage can read all jobs in that tenant
+###    - cross-tenant remains hidden
+
+@ownerATenant = tenant-alpha
+@ownerAActor = owner-alpha
+@ownerBActor = owner-beta
+@tenantB = tenant-beta
+@tenantBActor = owner-gamma
+@managerActor = manager-alpha
+
+@enqueueOnlyPermissions = jobs.email.enqueue
+@readOnlyPermissions = jobs.email.read
+@readManagePermissions = jobs.email.read,jobs.email.manage
+
+@ownerAJobId = 00000000-0000-0000-0000-000000000000
+@ownerBJobId = 00000000-0000-0000-0000-000000000000
+@tenantBJobId = 00000000-0000-0000-0000-000000000000
+
+### Setup 1 (Expected: 202 Accepted)
+### Creates a tenant-alpha job owned by owner-alpha.
+POST {{baseUrl}}/api/jobs
+X-Actor-Id: {{ownerAActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{enqueueOnlyPermissions}}
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "ownerA_seed",
+    "email": "ownerA_seed@example.com"
+  }
+}
+
+### Setup 2 (Expected: 202 Accepted)
+### Creates a tenant-alpha job owned by owner-beta.
+POST {{baseUrl}}/api/jobs
+X-Actor-Id: {{ownerBActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{enqueueOnlyPermissions}}
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "ownerB_seed",
+    "email": "ownerB_seed@example.com"
+  }
+}
+
+### Setup 3 (Expected: 202 Accepted)
+### Creates a tenant-beta job owned by owner-gamma.
+POST {{baseUrl}}/api/jobs
+X-Actor-Id: {{tenantBActor}}
+X-Tenant-Id: {{tenantB}}
+X-Permissions: {{enqueueOnlyPermissions}}
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "tenantB_seed",
+    "email": "tenantB_seed@example.com"
+  }
+}
+
+### Case A (Expected: 200 OK with only owner-alpha jobs)
+GET {{baseUrl}}/api/jobs
+X-Actor-Id: {{ownerAActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{readOnlyPermissions}}
+
+### Case B (Expected: 404 Not Found)
+### owner-alpha attempts to read owner-beta's job in the same tenant.
+GET {{baseUrl}}/api/jobs/{{ownerBJobId}}
+X-Actor-Id: {{ownerAActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{readOnlyPermissions}}
+
+### Case C (Expected: 200 OK)
+### owner-alpha reads their own job.
+GET {{baseUrl}}/api/jobs/{{ownerAJobId}}
+X-Actor-Id: {{ownerAActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{readOnlyPermissions}}
+
+### Case D (Expected: 200 OK with tenant-alpha jobs from both owners)
+GET {{baseUrl}}/api/jobs
+X-Actor-Id: {{managerActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{readManagePermissions}}
+
+### Case E (Expected: 404 Not Found)
+### manager in tenant-alpha attempts cross-tenant read of tenant-beta job.
+GET {{baseUrl}}/api/jobs/{{tenantBJobId}}
+X-Actor-Id: {{managerActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{readManagePermissions}}
+
+### Case F (Expected: 403 Forbidden)
+### Missing jobs.email.read permission.
+GET {{baseUrl}}/api/jobs
+X-Actor-Id: {{ownerAActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{enqueueOnlyPermissions}}
+
+### Case G (Expected: 403 Forbidden)
+### Missing jobs.email.enqueue permission.
+POST {{baseUrl}}/api/jobs
+X-Actor-Id: {{ownerAActor}}
+X-Tenant-Id: {{ownerATenant}}
+X-Permissions: {{readOnlyPermissions}}
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "should_fail_enqueue",
+    "email": "should_fail_enqueue@example.com"
   }
 }

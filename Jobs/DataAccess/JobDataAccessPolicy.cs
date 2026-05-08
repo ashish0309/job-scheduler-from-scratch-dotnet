@@ -10,7 +10,12 @@ public sealed class JobDataAccessPolicy : DataAccessPolicy<JobRecord>
     public override IReadOnlyDictionary<DataAccessOperation, IReadOnlyList<IDataAccessRule<JobRecord>>> RulesByOperation { get; } =
         new Dictionary<DataAccessOperation, IReadOnlyList<IDataAccessRule<JobRecord>>>
         {
-            [DataAccessOperation.Read] = [],
+            [DataAccessOperation.Read] =
+            [
+                new OwnerGrantRule<JobRecord>(),
+                new EmailManageGrantRule<JobRecord>(),
+                new GlobalReadGrantRule<JobRecord>()
+            ],
             [DataAccessOperation.Mutate] = []
         };
 }

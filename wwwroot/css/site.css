@@ -21,6 +21,27 @@ body {
   margin-bottom: 60px;
 }
 
+.actor-banner {
+  background: #f7f8fa;
+  border-bottom: 1px solid #d8dde3;
+  margin-top: -1rem;
+  padding: 0.5rem 0;
+}
+
+.actor-banner-content {
+  color: #3d4652;
+  display: flex;
+  flex-wrap: wrap;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.85rem;
+  gap: 1.25rem;
+}
+
+.actor-banner-content strong {
+  color: #1f2933;
+  font-weight: 650;
+}
+
 .monitor-header {
   align-items: center;
   display: flex;
@@ -105,6 +126,12 @@ body {
 .job-id {
   color: #5c6470;
   display: inline-block;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.job-meta {
   font-family: var(--bs-font-monospace);
   font-size: 0.85rem;
   overflow-wrap: anywhere;

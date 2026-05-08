@@ -9,6 +9,10 @@
     <link rel="stylesheet" href="~/JobSchedulerPrototype.styles.css" asp-append-version="true" />
 </head>
 <body>
+    @inject JobSchedulerPrototype.Jobs.IJobActorProvider JobActorProvider
+    @{
+        var currentActor = JobActorProvider.GetCurrentActor();
+    }
     <header>
         <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow mb-3">
             <div class="container">
@@ -29,6 +33,12 @@
                 </div>
             </div>
         </nav>
+        <div class="actor-banner">
+            <div class="container actor-banner-content">
+                <span>Actor: <strong>@currentActor.Id</strong></span>
+                <span>Tenant: <strong>@currentActor.TenantId</strong></span>
+            </div>
+        </div>
     </header>
     <div class="container">
         <main role="main" class="pb-3">

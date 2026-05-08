@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace JobSchedulerPrototype.Jobs;
 
-public sealed record JobRecord : ITenantScoped
+public sealed record JobRecord : ITenantScoped, IActorOwned
 {
     private readonly List<JobStateChange> _history = [];
 

@@ -24,6 +24,70 @@ public sealed class DataAccessPolicyFilterBuilderTests
     }
 
     [Fact]
+    public void ReadFilterAllowsOnlyOwnedJobsWithoutManagePermission()
+    {
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var actor = new JobActor(
+            id: "owner-alpha",
+            tenantId: TestJobActorProvider.TenantId,
+            permissions: [JobPermissions.EmailRead]);
+        var context = new TestDataAccessPolicyContext(
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId),
+            DataAccessOperation.Read,
+            actor);
+
+        var filter = builder.BuildFilter(typeof(JobRecord), context);
+
+        var typedFilter = Assert.IsAssignableFrom<Expression<Func<JobRecord, bool>>>(filter);
+        var canSee = typedFilter.Compile();
+        Assert.True(canSee(CreateQueuedJob(TestJobActorProvider.TenantId, actor.Id)));
+        Assert.False(canSee(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-beta")));
+    }
+
+    [Fact]
+    public void ReadFilterAllowsAllTenantJobsWithManagePermission()
+    {
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var actor = new JobActor(
+            id: "manager-alpha",
+            tenantId: TestJobActorProvider.TenantId,
+            permissions: [JobPermissions.EmailRead, JobPermissions.EmailManage]);
+        var context = new TestDataAccessPolicyContext(
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId),
+            DataAccessOperation.Read,
+            actor);
+
+        var filter = builder.BuildFilter(typeof(JobRecord), context);
+
+        var typedFilter = Assert.IsAssignableFrom<Expression<Func<JobRecord, bool>>>(filter);
+        var canSee = typedFilter.Compile();
+        Assert.True(canSee(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-alpha")));
+        Assert.True(canSee(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-beta")));
+        Assert.False(canSee(CreateQueuedJob("tenant-beta", "owner-gamma")));
+    }
+
+    [Fact]
+    public void ReadFilterAllowsCrossTenantJobsWithGlobalReadPermissionAndAllTenantsScope()
+    {
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var actor = new JobActor(
+            id: "service-user",
+            tenantId: TestJobActorProvider.TenantId,
+            permissions: [JobPermissions.EmailRead, JobPermissions.GlobalRead]);
+        var context = new TestDataAccessPolicyContext(
+            DataAccessScope.AllTenants(),
+            DataAccessOperation.Read,
+            actor);
+
+        var filter = builder.BuildFilter(typeof(JobRecord), context);
+
+        var typedFilter = Assert.IsAssignableFrom<Expression<Func<JobRecord, bool>>>(filter);
+        var canSee = typedFilter.Compile();
+        Assert.True(canSee(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-alpha")));
+        Assert.True(canSee(CreateQueuedJob("tenant-beta", "owner-gamma")));
+    }
+
+    [Fact]
     public void BuildFilterReturnsNullWhenEntityHasNoPolicy()
     {
         var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
@@ -79,12 +143,14 @@ public sealed class DataAccessPolicyFilterBuilderTests
         Assert.Contains("could not be translated", exception.Message);
     }
 
-    private static JobRecord CreateQueuedJob(string tenantId)
+    private static JobRecord CreateQueuedJob(
+        string tenantId,
+        string createdByActorId = TestJobActorProvider.ActorId)
     {
         return JobRecord.Enqueue(
             Guid.NewGuid(),
             tenantId,
-            TestJobActorProvider.ActorId,
+            createdByActorId,
             "send-welcome-email",
             Payload(),
             maxAttempts: 3,
