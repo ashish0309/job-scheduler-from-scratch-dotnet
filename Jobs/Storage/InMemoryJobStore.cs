@@ -171,6 +171,28 @@ public sealed class InMemoryJobStore : IJobStore
         }
     }
 
+    public bool Acknowledge(
+        Guid id,
+        string acknowledgedBy,
+        DateTimeOffset acknowledgedAt)
+    {
+        if (string.IsNullOrWhiteSpace(acknowledgedBy))
+        {
+            return false;
+        }
+
+        lock (_lock)
+        {
+            if (!_jobsById.TryGetValue(id, out var job))
+            {
+                return false;
+            }
+
+            _jobsById[id] = job.Acknowledge(acknowledgedBy, acknowledgedAt);
+            return true;
+        }
+    }
+
     private void AddPendingJobUnderLock(JobRecord job, DateTimeOffset addedAt)
     {
         if (job.Status is not (JobStatus.Queued or JobStatus.Scheduled))

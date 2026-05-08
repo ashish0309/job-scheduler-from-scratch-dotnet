@@ -41,6 +41,10 @@ public sealed class JobSchedulerDbContextTests
             jobEntity.FindProperty(nameof(JobRecord.ClaimedBy))?.GetMaxLength());
         Assert.NotNull(jobEntity.FindProperty(nameof(JobRecord.ClaimedAt)));
         Assert.NotNull(jobEntity.FindProperty(nameof(JobRecord.LeaseExpiresAt)));
+        Assert.Equal(
+            200,
+            jobEntity.FindProperty(nameof(JobRecord.AcknowledgedBy))?.GetMaxLength());
+        Assert.NotNull(jobEntity.FindProperty(nameof(JobRecord.AcknowledgedAt)));
         Assert.NotNull(jobEntity.FindIndex(
             [
                 jobEntity.FindProperty(nameof(JobRecord.Status))!,
@@ -192,6 +196,11 @@ public sealed class JobSchedulerDbContextTests
             Assert.Contains(
                 "20260506094822_AddJobOwnership",
                 await db.Database.GetAppliedMigrationsAsync());
+            Assert.Contains(
+                await db.Database.GetAppliedMigrationsAsync(),
+                migrationName => migrationName.EndsWith(
+                    "_AddJobAcknowledgement",
+                    StringComparison.Ordinal));
         }
     }
 

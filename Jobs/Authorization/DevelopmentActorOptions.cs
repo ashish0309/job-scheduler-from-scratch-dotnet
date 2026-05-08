@@ -10,5 +10,5 @@ public sealed class DevelopmentActorOptions
 
     public string TenantId { get; set; } = DevelopmentHeaderJobActorProvider.DefaultTenantId;
 
-    public string[] Permissions { get; set; } = [JobPermissions.All];
+    public string[] Permissions { get; set; } = [];
 }

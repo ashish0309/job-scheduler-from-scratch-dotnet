@@ -21,6 +21,48 @@ public sealed class InMemoryJobStoreTests
     }
 
     [Fact]
+    public void AcknowledgeMarksJobWithActorAndTimestamp()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        var acknowledgedAt = new DateTimeOffset(2026, 5, 8, 10, 0, 0, TimeSpan.Zero);
+        store.Add(job);
+
+        var acknowledged = store.Acknowledge(job.Id, "manager-alpha", acknowledgedAt);
+
+        Assert.True(acknowledged);
+        var persistedJob = store.Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal("manager-alpha", persistedJob.AcknowledgedBy);
+        Assert.Equal(acknowledgedAt, persistedJob.AcknowledgedAt);
+    }
+
+    [Fact]
+    public void AcknowledgeReturnsFalseWhenActorIsBlank()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob();
+        store.Add(job);
+
+        var acknowledged = store.Acknowledge(job.Id, "", DateTimeOffset.UtcNow);
+
+        Assert.False(acknowledged);
+    }
+
+    [Fact]
+    public void AcknowledgeReturnsFalseWhenJobDoesNotExist()
+    {
+        var store = new InMemoryJobStore();
+
+        var acknowledged = store.Acknowledge(
+            Guid.NewGuid(),
+            "manager-alpha",
+            DateTimeOffset.UtcNow);
+
+        Assert.False(acknowledged);
+    }
+
+    [Fact]
     public void TryClaimNextDueJobClaimsOldestQueuedJob()
     {
         var store = new InMemoryJobStore();

@@ -16,6 +16,11 @@ public sealed class JobDataAccessPolicy : DataAccessPolicy<JobRecord>
                 new EmailManageGrantRule<JobRecord>(),
                 new GlobalReadGrantRule<JobRecord>()
             ],
-            [DataAccessOperation.Mutate] = []
+            [DataAccessOperation.Mutate] =
+            [
+                new OwnerGrantRule<JobRecord>(),
+                new EmailManageGrantRule<JobRecord>(),
+                new ExecuteGrantRule<JobRecord>()
+            ]
         };
 }

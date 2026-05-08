@@ -39,6 +39,10 @@
         <strong>@(job.ClaimedBy ?? "Not claimed")</strong>
     </div>
     <div class="detail-item">
+        <span>Acknowledged by</span>
+        <strong>@(job.AcknowledgedBy ?? "Not acknowledged")</strong>
+    </div>
+    <div class="detail-item">
         <span>Enqueued</span>
         <strong>@FormatTimestamp(job.EnqueuedAt)</strong>
     </div>
@@ -66,6 +70,10 @@
         <div class="detail-item">
             <span>Lease expires</span>
             <strong>@FormatTimestamp(job.LeaseExpiresAt)</strong>
+        </div>
+        <div class="detail-item">
+            <span>Acknowledged</span>
+            <strong>@FormatTimestamp(job.AcknowledgedAt)</strong>
         </div>
         <div class="detail-item">
             <span>Completed</span>

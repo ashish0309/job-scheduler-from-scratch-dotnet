@@ -3,6 +3,7 @@ namespace JobSchedulerPrototype.Jobs;
 public sealed class DataAccessScopeProvider : IDataAccessScopeProvider
 {
     private readonly IJobActorProvider _actorProvider;
+    private readonly AsyncLocal<JobActor?> _currentActor = new();
     private readonly AsyncLocal<DataAccessScope?> _currentScope = new();
     private readonly AsyncLocal<DataAccessOperation?> _currentOperation = new();
 
@@ -11,7 +12,9 @@ public sealed class DataAccessScopeProvider : IDataAccessScopeProvider
         _actorProvider = actorProvider;
     }
 
-    public JobActor CurrentActor => _actorProvider.GetCurrentActor();
+    public JobActor? ScopedActor => _currentActor.Value;
+
+    public JobActor CurrentActor => ScopedActor ?? _actorProvider.GetCurrentActor();
 
     public DataAccessScope Current =>
         _currentScope.Value ?? DataAccessScope.Tenant(CurrentActor.TenantId);
@@ -36,6 +39,16 @@ public sealed class DataAccessScopeProvider : IDataAccessScopeProvider
     public IDisposable BeginScope(DataAccessScope scope)
     {
         return BeginScope(scope, DataAccessOperation.Read);
+    }
+
+    public IDisposable BeginActorScope(JobActor actor)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        var previousActor = _currentActor.Value;
+        _currentActor.Value = actor;
+
+        return new ScopeHandle(() => _currentActor.Value = previousActor);
     }
 
     private sealed class ScopeHandle : IDisposable

@@ -30,4 +30,25 @@ public sealed class DataAccessScopeProviderTests
         Assert.False(provider.Current.IncludesAllTenants);
         Assert.Equal(TestJobActorProvider.TenantId, provider.Current.TenantId);
     }
+
+    [Fact]
+    public void BeginActorScopeTemporarilyOverridesCurrentActor()
+    {
+        var provider = new DataAccessScopeProvider(new TestJobActorProvider());
+        var workerActor = new JobActor(
+            "worker-service",
+            "system",
+            [JobPermissions.Execute]);
+
+        using (provider.BeginActorScope(workerActor))
+        {
+            Assert.Equal("worker-service", provider.CurrentActor.Id);
+            Assert.Equal("system", provider.CurrentActor.TenantId);
+            Assert.True(provider.CurrentActor.HasPermission(JobPermissions.Execute));
+            Assert.False(provider.CurrentActor.HasPermission(JobPermissions.EmailRead));
+        }
+
+        Assert.Equal(TestJobActorProvider.ActorId, provider.CurrentActor.Id);
+        Assert.Equal(TestJobActorProvider.TenantId, provider.CurrentActor.TenantId);
+    }
 }

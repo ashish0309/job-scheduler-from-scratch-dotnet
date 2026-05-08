@@ -16,5 +16,7 @@ public interface IDataAccessPolicyContext
 
     bool CanManageEmailJobs => Actor.HasPermission(JobPermissions.EmailManage);
 
-    bool CanReadAllTenantsJobs => Actor.Permissions.Contains(JobPermissions.GlobalRead);
+    bool CanReadAllTenantsJobs => Actor.HasPermission(JobPermissions.GlobalRead);
+
+    bool CanExecuteJobs => Actor.HasPermission(JobPermissions.Execute);
 }

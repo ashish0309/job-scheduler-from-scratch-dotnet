@@ -83,6 +83,15 @@ public sealed class DataAccessScopedJobStore : IJobStore
             scheduledAt);
     }
 
+    public bool Acknowledge(
+        Guid id,
+        string acknowledgedBy,
+        DateTimeOffset acknowledgedAt)
+    {
+        using var scope = BeginOperation(DataAccessOperation.Mutate);
+        return _inner.Acknowledge(id, acknowledgedBy, acknowledgedAt);
+    }
+
     private IDisposable BeginOperation(DataAccessOperation operation)
     {
         var scope = _scopeProvider.Current;

@@ -28,7 +28,8 @@ public abstract class JobAuthorizedAction<TRequest, TResponse> : IJobActionHandl
                 $"{GetType().Name} must define at least one authorization rule.");
         }
 
-        var actor = _actorProvider.GetCurrentActor();
+        var actor = _dataAccessScopeProvider.ScopedActor
+            ?? _actorProvider.GetCurrentActor();
         var authorization = await _ruleEvaluator.EvaluateAsync(
             actor,
             rules,

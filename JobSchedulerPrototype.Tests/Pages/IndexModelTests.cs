@@ -109,6 +109,46 @@ public sealed class IndexModelTests
         Assert.Equal("Job scheduled.", scheduledStateChange.Reason);
     }
 
+    [Fact]
+    public async Task OnPostAcknowledgePersistsAndSetsSuccessMessage()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
+        store.Add(job);
+        var model = new IndexModel(new StoreBackedJobActionDispatcher(store));
+
+        var result = await model.OnPostAcknowledge(job.Id, CancellationToken.None);
+
+        Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
+        Assert.Equal("success", model.StatusLevel);
+        Assert.Contains(job.Id.ToString(), model.StatusMessage, StringComparison.Ordinal);
+        var acknowledgedJob = store.Get(job.Id);
+        Assert.NotNull(acknowledgedJob);
+        Assert.Equal("manager-alpha", acknowledgedJob.AcknowledgedBy);
+        Assert.NotNull(acknowledgedJob.AcknowledgedAt);
+    }
+
+    [Fact]
+    public async Task OnPostAcknowledgeSetsDangerMessageWhenUnauthorized()
+    {
+        var store = new InMemoryJobStore();
+        var job = CreateJob(enqueuedAt: new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero));
+        store.Add(job);
+        var model = new IndexModel(new StoreBackedJobActionDispatcher(
+            store,
+            acknowledgeAuthorized: false));
+
+        var result = await model.OnPostAcknowledge(job.Id, CancellationToken.None);
+
+        Assert.IsType<Microsoft.AspNetCore.Mvc.RedirectToPageResult>(result);
+        Assert.Equal("danger", model.StatusLevel);
+        Assert.Equal("Actor is not authorized to acknowledge jobs.", model.StatusMessage);
+        var persistedJob = store.Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Null(persistedJob.AcknowledgedBy);
+        Assert.Null(persistedJob.AcknowledgedAt);
+    }
+
     private static JobRecord CreateJob(DateTimeOffset enqueuedAt)
     {
         return JobRecord.Enqueue(
@@ -143,10 +183,17 @@ public sealed class IndexModelTests
     private sealed class StoreBackedJobActionDispatcher : IJobActionDispatcher
     {
         private readonly IJobStore _store;
+        private readonly bool _acknowledgeAuthorized;
+        private readonly bool _acknowledgeResult;
 
-        public StoreBackedJobActionDispatcher(IJobStore store)
+        public StoreBackedJobActionDispatcher(
+            IJobStore store,
+            bool acknowledgeAuthorized = true,
+            bool acknowledgeResult = true)
         {
             _store = store;
+            _acknowledgeAuthorized = acknowledgeAuthorized;
+            _acknowledgeResult = acknowledgeResult;
         }
 
         public Task<TResult> DispatchAsync<TResult>(
@@ -156,6 +203,15 @@ public sealed class IndexModelTests
             object response = request switch
             {
                 ListJobsActionRequest => ListJobsActionResult.Authorized(_store.List()),
+                AcknowledgeJobActionRequest acknowledgeRequest when _acknowledgeAuthorized =>
+                    AcknowledgeJobActionResult.Authorized(
+                        _acknowledgeResult
+                        && _store.Acknowledge(
+                            acknowledgeRequest.Id,
+                            "manager-alpha",
+                            new DateTimeOffset(2026, 5, 8, 10, 0, 0, TimeSpan.Zero))),
+                AcknowledgeJobActionRequest =>
+                    AcknowledgeJobActionResult.Denied("Actor is not authorized to acknowledge jobs."),
                 _ => throw new InvalidOperationException(
                     $"Unsupported request type '{request.GetType().Name}' in test dispatcher.")
             };

@@ -72,6 +72,59 @@ public sealed class SqliteJobStoreTests
     }
 
     [Fact]
+    public async Task AcknowledgePersistsActorAndTimestamp()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var job = CreateJob();
+        var acknowledgedAt = new DateTimeOffset(2026, 5, 8, 10, 0, 0, TimeSpan.Zero);
+        store.Add(job);
+
+        var acknowledged = store.Acknowledge(job.Id, "manager-alpha", acknowledgedAt);
+
+        Assert.True(acknowledged);
+        var persistedJob = database.CreateStore().Get(job.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Equal("manager-alpha", persistedJob.AcknowledgedBy);
+        Assert.Equal(acknowledgedAt, persistedJob.AcknowledgedAt);
+    }
+
+    [Fact]
+    public async Task AcknowledgeUsesCurrentDataAccessScope()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var systemStore = database.CreateStore(DataAccessScope.AllTenants());
+        var scopedStore = database.CreateStore(
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId));
+        var otherTenantJob = CreateJob(tenantId: "tenant-beta");
+        systemStore.Add(otherTenantJob);
+
+        var acknowledged = scopedStore.Acknowledge(
+            otherTenantJob.Id,
+            "manager-alpha",
+            DateTimeOffset.UtcNow);
+
+        Assert.False(acknowledged);
+        var persistedJob = systemStore.Get(otherTenantJob.Id);
+        Assert.NotNull(persistedJob);
+        Assert.Null(persistedJob.AcknowledgedBy);
+        Assert.Null(persistedJob.AcknowledgedAt);
+    }
+
+    [Fact]
+    public async Task AcknowledgeReturnsFalseWhenActorIsBlank()
+    {
+        await using var database = await SqliteJobStoreDatabase.CreateAsync();
+        var store = database.CreateStore();
+        var job = CreateJob();
+        store.Add(job);
+
+        var acknowledged = store.Acknowledge(job.Id, "", DateTimeOffset.UtcNow);
+
+        Assert.False(acknowledged);
+    }
+
+    [Fact]
     public async Task TryClaimNextDueJobUsesCurrentDataAccessScope()
     {
         await using var database = await SqliteJobStoreDatabase.CreateAsync();

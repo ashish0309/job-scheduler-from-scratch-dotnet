@@ -35,7 +35,10 @@ public sealed class ActionDataAccessOperationTests
         var store = new ScopeCapturingJobStore(scopeProvider);
         var action = new ListJobsAction(
             store,
-            new TestJobActorProvider(),
+            new TestJobActorProvider(new JobActor(
+                TestJobActorProvider.ActorId,
+                TestJobActorProvider.TenantId,
+                [JobPermissions.EmailRead])),
             new JobAuthorizationRuleEvaluator(),
             scopeProvider);
 
@@ -94,6 +97,27 @@ public sealed class ActionDataAccessOperationTests
     }
 
     [Fact]
+    public async Task ListActionExecutesUnderReadOperationAndAllTenantsScopeForWildcardPermission()
+    {
+        var scopeProvider = ScopeProvider(JobPermissions.All);
+        var store = new ScopeCapturingJobStore(scopeProvider);
+        var action = new ListJobsAction(
+            store,
+            new TestJobActorProvider(new JobActor(
+                TestJobActorProvider.ActorId,
+                TestJobActorProvider.TenantId,
+                [JobPermissions.All])),
+            new JobAuthorizationRuleEvaluator(),
+            scopeProvider);
+
+        _ = await action.ExecuteAsync(new ListJobsActionRequest());
+
+        Assert.Equal(global::JobSchedulerPrototype.Jobs.DataAccessOperation.Read, store.CapturedOperation);
+        Assert.NotNull(store.CapturedScope);
+        Assert.True(store.CapturedScope!.IncludesAllTenants);
+    }
+
+    [Fact]
     public async Task ClaimActionExecutesUnderMutateOperationAndAllTenantsScope()
     {
         var scopeProvider = ScopeProvider(JobPermissions.Execute);
@@ -113,6 +137,54 @@ public sealed class ActionDataAccessOperationTests
         Assert.Equal(global::JobSchedulerPrototype.Jobs.DataAccessOperation.Mutate, lifecycle.CapturedOperation);
         Assert.NotNull(lifecycle.CapturedScope);
         Assert.True(lifecycle.CapturedScope!.IncludesAllTenants);
+    }
+
+    [Fact]
+    public async Task AcknowledgeActionExecutesUnderMutateOperationAndActorTenantScope()
+    {
+        var scopeProvider = ScopeProvider(
+            JobPermissions.EmailRead,
+            JobPermissions.EmailManage);
+        var store = new ScopeCapturingJobStore(scopeProvider);
+        var action = new AcknowledgeJobAction(
+            store,
+            new TestJobActorProvider(new JobActor(
+                TestJobActorProvider.ActorId,
+                TestJobActorProvider.TenantId,
+                [JobPermissions.EmailRead, JobPermissions.EmailManage])),
+            new JobAuthorizationRuleEvaluator(),
+            scopeProvider);
+
+        _ = await action.ExecuteAsync(new AcknowledgeJobActionRequest(Guid.NewGuid()));
+
+        Assert.Equal(global::JobSchedulerPrototype.Jobs.DataAccessOperation.Mutate, store.CapturedOperation);
+        Assert.NotNull(store.CapturedScope);
+        Assert.False(store.CapturedScope!.IncludesAllTenants);
+        Assert.Equal(TestJobActorProvider.TenantId, store.CapturedScope.TenantId);
+    }
+
+    [Fact]
+    public async Task AcknowledgeActionExecutesUnderMutateOperationAndAllTenantsScopeForGlobalManager()
+    {
+        var scopeProvider = ScopeProvider(
+            JobPermissions.EmailRead,
+            JobPermissions.EmailManage,
+            JobPermissions.GlobalRead);
+        var store = new ScopeCapturingJobStore(scopeProvider);
+        var action = new AcknowledgeJobAction(
+            store,
+            new TestJobActorProvider(new JobActor(
+                TestJobActorProvider.ActorId,
+                TestJobActorProvider.TenantId,
+                [JobPermissions.EmailRead, JobPermissions.EmailManage, JobPermissions.GlobalRead])),
+            new JobAuthorizationRuleEvaluator(),
+            scopeProvider);
+
+        _ = await action.ExecuteAsync(new AcknowledgeJobActionRequest(Guid.NewGuid()));
+
+        Assert.Equal(global::JobSchedulerPrototype.Jobs.DataAccessOperation.Mutate, store.CapturedOperation);
+        Assert.NotNull(store.CapturedScope);
+        Assert.True(store.CapturedScope!.IncludesAllTenants);
     }
 
     private static IDataAccessScopeProvider ScopeProvider(params string[] permissions)
@@ -196,6 +268,15 @@ public sealed class ActionDataAccessOperationTests
         {
             Capture();
             return false;
+        }
+
+        public bool Acknowledge(
+            Guid id,
+            string acknowledgedBy,
+            DateTimeOffset acknowledgedAt)
+        {
+            Capture();
+            return true;
         }
 
         private void Capture()

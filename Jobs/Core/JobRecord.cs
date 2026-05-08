@@ -17,6 +17,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
     public string? ClaimedBy { get; private init; }
     public DateTimeOffset? ClaimedAt { get; private init; }
     public DateTimeOffset? LeaseExpiresAt { get; private init; }
+    public string? AcknowledgedBy { get; private init; }
+    public DateTimeOffset? AcknowledgedAt { get; private init; }
     public int MaxAttempts { get; private init; }
     public string? FailureReason { get; private init; }
     public IReadOnlyList<JobStateChange> History => _history;
@@ -56,6 +58,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
         string? claimedBy,
         DateTimeOffset? claimedAt,
         DateTimeOffset? leaseExpiresAt,
+        string? acknowledgedBy,
+        DateTimeOffset? acknowledgedAt,
         int maxAttempts,
         string? failureReason,
         IReadOnlyList<JobStateChange> history)
@@ -71,6 +75,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
         ClaimedBy = claimedBy;
         ClaimedAt = claimedAt;
         LeaseExpiresAt = leaseExpiresAt;
+        AcknowledgedBy = acknowledgedBy;
+        AcknowledgedAt = acknowledgedAt;
         MaxAttempts = maxAttempts;
         FailureReason = failureReason;
         _history = history
@@ -110,6 +116,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             claimedBy: null,
             claimedAt: null,
             leaseExpiresAt: null,
+            acknowledgedBy: null,
+            acknowledgedAt: null,
             maxAttempts,
             failureReason: null,
             [queuedChange]);
@@ -149,6 +157,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             claimedBy: null,
             claimedAt: null,
             leaseExpiresAt: null,
+            acknowledgedBy: null,
+            acknowledgedAt: null,
             maxAttempts,
             failureReason: null,
             [scheduledChange]);
@@ -170,6 +180,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             claimedBy: null,
             claimedAt: null,
             leaseExpiresAt: null,
+            AcknowledgedBy,
+            AcknowledgedAt,
             MaxAttempts,
             FailureReason,
             [.. History, stateChange]);
@@ -208,6 +220,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             claimedBy: workerId,
             claimedAt,
             leaseExpiresAt,
+            AcknowledgedBy,
+            AcknowledgedAt,
             MaxAttempts,
             FailureReason,
             [.. History, stateChange]);
@@ -256,6 +270,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             claimedBy: workerId,
             claimedAt,
             leaseExpiresAt,
+            AcknowledgedBy,
+            AcknowledgedAt,
             MaxAttempts,
             FailureReason,
             [.. History, stateChange]);
@@ -287,6 +303,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             ClaimedBy,
             ClaimedAt,
             leaseExpiresAt,
+            AcknowledgedBy,
+            AcknowledgedAt,
             MaxAttempts,
             FailureReason,
             History);
@@ -315,6 +333,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             claimedBy: null,
             claimedAt: null,
             leaseExpiresAt: null,
+            AcknowledgedBy,
+            AcknowledgedAt,
             MaxAttempts,
             failureReason,
             [.. History, failedChange, scheduledChange]);
@@ -336,6 +356,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             claimedBy: null,
             claimedAt: null,
             leaseExpiresAt: null,
+            AcknowledgedBy,
+            AcknowledgedAt,
             MaxAttempts,
             reason,
             [.. History, stateChange]);
@@ -360,6 +382,8 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
             ClaimedBy,
             ClaimedAt,
             LeaseExpiresAt,
+            AcknowledgedBy,
+            AcknowledgedAt,
             MaxAttempts,
             FailureReason,
             History
@@ -367,6 +391,32 @@ public sealed record JobRecord : ITenantScoped, IActorOwned
                 .ThenBy(change => change.ChangedAt)
                 .ThenBy(change => change.Id)
                 .ToArray());
+    }
+
+    public JobRecord Acknowledge(string actorId, DateTimeOffset acknowledgedAt)
+    {
+        if (string.IsNullOrWhiteSpace(actorId))
+        {
+            throw new ArgumentException("Actor ID is required.", nameof(actorId));
+        }
+
+        return new JobRecord(
+            Id,
+            TenantId,
+            CreatedByActorId,
+            Type,
+            Payload,
+            Status,
+            CurrentStateChangeId,
+            RunAt,
+            ClaimedBy,
+            ClaimedAt,
+            LeaseExpiresAt,
+            actorId.Trim(),
+            acknowledgedAt,
+            MaxAttempts,
+            FailureReason,
+            History);
     }
 
     private DateTimeOffset? ChangedAt(JobStatus status)

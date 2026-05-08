@@ -47,7 +47,7 @@ public sealed class EnqueueJobAction : JobAuthorizedAction<EnqueueJobActionReque
 
     protected override JobEnqueueResult OnAuthorizationDenied(JobAuthorizationResult result)
     {
-        return JobEnqueueResult.Rejected(result.ErrorMessage ?? "Not authorized to enqueue jobs.");
+        return JobEnqueueResult.Rejected(result.ErrorMessage ?? "Actor is not authorized to enqueue jobs.");
     }
 
     protected override Task<JobEnqueueResult> ExecuteAuthorizedAsync(

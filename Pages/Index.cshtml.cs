@@ -1,4 +1,5 @@
 using JobSchedulerPrototype.Jobs;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace JobSchedulerPrototype.Pages;
@@ -13,6 +14,12 @@ public class IndexModel : PageModel
     }
 
     public IReadOnlyCollection<JobSummary> Jobs { get; private set; } = [];
+
+    [TempData]
+    public string? StatusMessage { get; set; }
+
+    [TempData]
+    public string? StatusLevel { get; set; }
 
     public int QueuedCount => Jobs.Count(job => job.Status == JobStatus.Queued);
 
@@ -32,6 +39,40 @@ public class IndexModel : PageModel
             ? result.Jobs.Select(JobSummary.From).ToArray()
             : [];
     }
+
+    public async Task<IActionResult> OnPostAcknowledge(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        if (id == Guid.Empty)
+        {
+            StatusLevel = "warning";
+            StatusMessage = "Job ID is required.";
+            return RedirectToPage();
+        }
+
+        var result = await _actions.DispatchAsync(
+            new AcknowledgeJobActionRequest(id),
+            cancellationToken);
+
+        if (!result.IsAuthorized)
+        {
+            StatusLevel = "danger";
+            StatusMessage = result.ErrorMessage ?? "You are not authorized to acknowledge jobs.";
+            return RedirectToPage();
+        }
+
+        if (!result.Acknowledged)
+        {
+            StatusLevel = "warning";
+            StatusMessage = "Job could not be acknowledged. It may not exist or may be outside your scope.";
+            return RedirectToPage();
+        }
+
+        StatusLevel = "success";
+        StatusMessage = $"Acknowledged job {id}.";
+        return RedirectToPage();
+    }
 }
 
 public sealed record JobSummary(
@@ -44,6 +85,8 @@ public sealed record JobSummary(
     string? ClaimedBy,
     DateTimeOffset? ClaimedAt,
     DateTimeOffset? LeaseExpiresAt,
+    string? AcknowledgedBy,
+    DateTimeOffset? AcknowledgedAt,
     DateTimeOffset EnqueuedAt,
     DateTimeOffset? ScheduledAt,
     DateTimeOffset? StartedAt,
@@ -68,6 +111,8 @@ public sealed record JobSummary(
             job.ClaimedBy,
             job.ClaimedAt,
             job.LeaseExpiresAt,
+            job.AcknowledgedBy,
+            job.AcknowledgedAt,
             job.EnqueuedAt,
             job.ScheduledAt,
             job.StartedAt,

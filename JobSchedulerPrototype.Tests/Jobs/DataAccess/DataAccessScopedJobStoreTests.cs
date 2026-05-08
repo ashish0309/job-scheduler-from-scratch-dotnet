@@ -34,10 +34,14 @@ public sealed class DataAccessScopedJobStoreTests
                 Guid.NewGuid(),
                 "retry",
                 DateTimeOffset.UtcNow.AddMinutes(1));
+            _ = scopedStore.Acknowledge(
+                Guid.NewGuid(),
+                "manager-alpha",
+                DateTimeOffset.UtcNow);
         }
 
         var operations = innerStore.CapturedOperations;
-        Assert.Equal(8, operations.Count);
+        Assert.Equal(9, operations.Count);
         Assert.Equal(DataAccessOperation.Mutate, operations[0]);
         Assert.Equal(DataAccessOperation.Read, operations[1]);
         Assert.Equal(DataAccessOperation.Read, operations[2]);
@@ -46,6 +50,7 @@ public sealed class DataAccessScopedJobStoreTests
         Assert.Equal(DataAccessOperation.Mutate, operations[5]);
         Assert.Equal(DataAccessOperation.Mutate, operations[6]);
         Assert.Equal(DataAccessOperation.Mutate, operations[7]);
+        Assert.Equal(DataAccessOperation.Mutate, operations[8]);
 
         Assert.All(innerStore.CapturedScopes, scope => Assert.True(scope.IncludesAllTenants));
     }
@@ -133,6 +138,15 @@ public sealed class DataAccessScopedJobStoreTests
             Guid expectedCurrentStateChangeId,
             string reason,
             DateTimeOffset scheduledAt)
+        {
+            Capture();
+            return false;
+        }
+
+        public bool Acknowledge(
+            Guid id,
+            string acknowledgedBy,
+            DateTimeOffset acknowledgedAt)
         {
             Capture();
             return false;

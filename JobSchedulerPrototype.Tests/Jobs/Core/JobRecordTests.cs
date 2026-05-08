@@ -257,6 +257,28 @@ public sealed class JobRecordTests
     }
 
     [Fact]
+    public void AcknowledgeSetsActorAndTimestampWithoutChangingHistory()
+    {
+        var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);
+        var acknowledgedAt = enqueuedAt.AddMinutes(1);
+        var job = JobRecord.Enqueue(
+            Guid.NewGuid(),
+            TenantId,
+            ActorId,
+            "send-welcome-email",
+            Payload(),
+            maxAttempts: 3,
+            enqueuedAt);
+
+        var acknowledgedJob = job.Acknowledge("manager-alpha", acknowledgedAt);
+
+        Assert.Equal("manager-alpha", acknowledgedJob.AcknowledgedBy);
+        Assert.Equal(acknowledgedAt, acknowledgedJob.AcknowledgedAt);
+        Assert.Equal(job.History.Count, acknowledgedJob.History.Count);
+        Assert.Equal(job.CurrentStateChangeId, acknowledgedJob.CurrentStateChangeId);
+    }
+
+    [Fact]
     public void TransitionToFailedAppendsHistoryAndCapturesReason()
     {
         var enqueuedAt = new DateTimeOffset(2026, 5, 4, 10, 0, 0, TimeSpan.Zero);

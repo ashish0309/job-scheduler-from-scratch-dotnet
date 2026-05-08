@@ -28,7 +28,7 @@ public sealed class GetJobByIdAction : JobAuthorizedAction<GetJobByIdActionReque
         GetJobByIdActionRequest request,
         JobActor actor)
     {
-        return actor.Permissions.Contains(JobPermissions.GlobalRead)
+        return actor.HasPermission(JobPermissions.GlobalRead)
             ? DataAccessScope.AllTenants()
             : DataAccessScope.Tenant(actor.TenantId);
     }

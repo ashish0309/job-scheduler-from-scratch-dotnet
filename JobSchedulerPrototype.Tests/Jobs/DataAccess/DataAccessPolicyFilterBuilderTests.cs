@@ -88,6 +88,70 @@ public sealed class DataAccessPolicyFilterBuilderTests
     }
 
     [Fact]
+    public void MutateFilterAllowsOnlyOwnedJobsWithoutManageOrExecutePermission()
+    {
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var actor = new JobActor(
+            id: "owner-alpha",
+            tenantId: TestJobActorProvider.TenantId,
+            permissions: [JobPermissions.EmailRead]);
+        var context = new TestDataAccessPolicyContext(
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId),
+            DataAccessOperation.Mutate,
+            actor);
+
+        var filter = builder.BuildFilter(typeof(JobRecord), context);
+
+        var typedFilter = Assert.IsAssignableFrom<Expression<Func<JobRecord, bool>>>(filter);
+        var canMutate = typedFilter.Compile();
+        Assert.True(canMutate(CreateQueuedJob(TestJobActorProvider.TenantId, actor.Id)));
+        Assert.False(canMutate(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-beta")));
+    }
+
+    [Fact]
+    public void MutateFilterAllowsAllTenantJobsWithManagePermission()
+    {
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var actor = new JobActor(
+            id: "manager-alpha",
+            tenantId: TestJobActorProvider.TenantId,
+            permissions: [JobPermissions.EmailManage]);
+        var context = new TestDataAccessPolicyContext(
+            DataAccessScope.Tenant(TestJobActorProvider.TenantId),
+            DataAccessOperation.Mutate,
+            actor);
+
+        var filter = builder.BuildFilter(typeof(JobRecord), context);
+
+        var typedFilter = Assert.IsAssignableFrom<Expression<Func<JobRecord, bool>>>(filter);
+        var canMutate = typedFilter.Compile();
+        Assert.True(canMutate(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-alpha")));
+        Assert.True(canMutate(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-beta")));
+        Assert.False(canMutate(CreateQueuedJob("tenant-beta", "owner-gamma")));
+    }
+
+    [Fact]
+    public void MutateFilterAllowsCrossTenantJobsWithExecutePermissionAndAllTenantsScope()
+    {
+        var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);
+        var actor = new JobActor(
+            id: "worker-service",
+            tenantId: TestJobActorProvider.TenantId,
+            permissions: [JobPermissions.Execute]);
+        var context = new TestDataAccessPolicyContext(
+            DataAccessScope.AllTenants(),
+            DataAccessOperation.Mutate,
+            actor);
+
+        var filter = builder.BuildFilter(typeof(JobRecord), context);
+
+        var typedFilter = Assert.IsAssignableFrom<Expression<Func<JobRecord, bool>>>(filter);
+        var canMutate = typedFilter.Compile();
+        Assert.True(canMutate(CreateQueuedJob(TestJobActorProvider.TenantId, "owner-alpha")));
+        Assert.True(canMutate(CreateQueuedJob("tenant-beta", "owner-gamma")));
+    }
+
+    [Fact]
     public void BuildFilterReturnsNullWhenEntityHasNoPolicy()
     {
         var builder = new DataAccessPolicyFilterBuilder([new JobDataAccessPolicy()]);

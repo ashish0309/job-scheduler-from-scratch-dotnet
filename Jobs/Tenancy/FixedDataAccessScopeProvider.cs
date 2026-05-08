@@ -8,6 +8,7 @@ public sealed class FixedDataAccessScopeProvider : IDataAccessScopeProvider
     private readonly DataAccessScope _defaultScope;
     private readonly JobActor _actor;
     private readonly DataAccessOperation _defaultOperation;
+    private readonly AsyncLocal<JobActor?> _currentActor = new();
     private readonly AsyncLocal<DataAccessScope?> _currentScope = new();
     private readonly AsyncLocal<DataAccessOperation?> _currentOperation = new();
 
@@ -21,7 +22,9 @@ public sealed class FixedDataAccessScopeProvider : IDataAccessScopeProvider
         _defaultOperation = defaultOperation;
     }
 
-    public JobActor CurrentActor => _actor;
+    public JobActor? ScopedActor => _currentActor.Value;
+
+    public JobActor CurrentActor => ScopedActor ?? _actor;
 
     public DataAccessScope Current => _currentScope.Value ?? _defaultScope;
 
@@ -44,6 +47,16 @@ public sealed class FixedDataAccessScopeProvider : IDataAccessScopeProvider
     public IDisposable BeginScope(DataAccessScope scope)
     {
         return BeginScope(scope, DataAccessOperation.Read);
+    }
+
+    public IDisposable BeginActorScope(JobActor actor)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+
+        var previousActor = _currentActor.Value;
+        _currentActor.Value = actor;
+
+        return new ScopeHandle(() => _currentActor.Value = previousActor);
     }
 
     private sealed class ScopeHandle : IDisposable

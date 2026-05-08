@@ -294,6 +294,26 @@ public sealed class SqliteJobStore : IJobStore
         return true;
     }
 
+    public bool Acknowledge(
+        Guid id,
+        string acknowledgedBy,
+        DateTimeOffset acknowledgedAt)
+    {
+        if (string.IsNullOrWhiteSpace(acknowledgedBy))
+        {
+            return false;
+        }
+
+        using var db = _dbContextFactory.CreateDbContext();
+        var rowsUpdated = db.Jobs
+            .Where(existingJob => existingJob.Id == id)
+            .ExecuteUpdate(setters => setters
+                .SetProperty(existingJob => existingJob.AcknowledgedBy, acknowledgedBy.Trim())
+                .SetProperty(existingJob => existingJob.AcknowledgedAt, acknowledgedAt));
+
+        return rowsUpdated > 0;
+    }
+
     private JobRecord? LoadJob(
         JobSchedulerDbContext db,
         Guid id)

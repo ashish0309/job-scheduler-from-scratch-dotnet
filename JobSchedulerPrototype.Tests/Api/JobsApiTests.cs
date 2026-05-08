@@ -6,6 +6,7 @@ using JobSchedulerPrototype.Jobs;
 using JobSchedulerPrototype.Tests.Jobs;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -50,6 +51,8 @@ public sealed class JobsApiTests
         Assert.Null(body.ClaimedBy);
         Assert.Null(body.ClaimedAt);
         Assert.Null(body.LeaseExpiresAt);
+        Assert.Null(body.AcknowledgedBy);
+        Assert.Null(body.AcknowledgedAt);
         Assert.Null(body.ScheduledAt);
         Assert.Null(body.StartedAt);
         Assert.Null(body.CompletedAt);
@@ -98,6 +101,8 @@ public sealed class JobsApiTests
         Assert.Null(job.ClaimedBy);
         Assert.Null(job.ClaimedAt);
         Assert.Null(job.LeaseExpiresAt);
+        Assert.Null(job.AcknowledgedBy);
+        Assert.Null(job.AcknowledgedAt);
         Assert.Null(job.ScheduledAt);
         Assert.Null(job.StartedAt);
         Assert.Null(job.CompletedAt);
@@ -136,6 +141,8 @@ public sealed class JobsApiTests
         Assert.Null(body.ClaimedBy);
         Assert.Null(body.ClaimedAt);
         Assert.Null(body.LeaseExpiresAt);
+        Assert.Null(body.AcknowledgedBy);
+        Assert.Null(body.AcknowledgedAt);
         Assert.NotNull(body.ScheduledAt);
         Assert.Null(body.StartedAt);
         var stateChange = Assert.Single(body.History);
@@ -613,7 +620,11 @@ public sealed class JobsApiTests
 
     private static void AddActorHeaders(HttpRequestMessage request, string tenantId)
     {
-        AddActorHeaders(request, tenantId, actorId: $"{tenantId}-user", permissions: null);
+        var permissions = request.Method == HttpMethod.Post
+            ? JobPermissions.EmailEnqueue
+            : JobPermissions.EmailRead;
+
+        AddActorHeaders(request, tenantId, actorId: $"{tenantId}-user", permissions);
     }
 
     private static void AddActorHeaders(
@@ -663,7 +674,11 @@ public sealed class JobsApiTests
                 configuration.AddInMemoryCollection(
                     new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:JobStore"] = _connectionString
+                        ["ConnectionStrings:JobStore"] = _connectionString,
+                        ["JobScheduler:DevelopmentActor:AllowRequestHeaders"] = bool.TrueString,
+                        ["JobScheduler:DevelopmentActor:ActorId"] = TestJobActorProvider.ActorId,
+                        ["JobScheduler:DevelopmentActor:TenantId"] = TestJobActorProvider.TenantId,
+                        ["JobScheduler:DevelopmentActor:Permissions:0"] = JobPermissions.All
                     });
             });
 
@@ -681,6 +696,17 @@ public sealed class JobsApiTests
                     });
                 }
             });
+        }
+
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            var host = base.CreateHost(builder);
+
+            using var scope = host.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<JobSchedulerDbContext>();
+            db.Database.Migrate();
+
+            return host;
         }
 
         protected override void Dispose(bool disposing)

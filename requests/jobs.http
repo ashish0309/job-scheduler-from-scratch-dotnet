@@ -270,3 +270,146 @@ Content-Type: application/json
     "email": "should_fail_enqueue@example.com"
   }
 }
+
+### ------------------------------------------------------------
+### Mutation Rule Test Matrix (Acknowledge via UI)
+### ------------------------------------------------------------
+### Why UI:
+### Acknowledge is currently a Razor Page POST handler (button on "/"), not a minimal API route.
+### Use these requests to seed + verify records, and use the UI button for the mutation itself.
+###
+### Prereq for fast setup (optional):
+### Set JobScheduler:DevelopmentActor:AllowRequestHeaders=true in appsettings.Development.json,
+### then restart the app. This lets each request below impersonate a different user.
+###
+### If you prefer no per-request headers, set AllowRequestHeaders=false and switch
+### ActorId/TenantId/Permissions in appsettings.Development.json between runs.
+
+@mutTenantA = tenant-alpha
+@mutTenantB = tenant-beta
+@mutOwnerA = owner-alpha
+@mutOwnerB = owner-beta
+@mutOwnerC = owner-gamma
+@mutManagerA = manager-alpha
+@mutExecutor = worker-exec
+
+@mutPermEnqueue = jobs.email.enqueue
+@mutPermRead = jobs.email.read
+@mutPermReadManage = jobs.email.read,jobs.email.manage
+@mutPermExecuteOnly = jobs.execute
+
+# @name mut_create_owner_a
+### Seed A (Expected: 202 Accepted)
+POST {{baseUrl}}/api/jobs
+X-Actor-Id: {{mutOwnerA}}
+X-Tenant-Id: {{mutTenantA}}
+X-Permissions: {{mutPermEnqueue}}
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "mutation_owner_a",
+    "email": "mutation_owner_a@example.com"
+  }
+}
+
+@mutOwnerAJobId = {{mut_create_owner_a.response.body.$.id}}
+
+# @name mut_create_owner_b
+### Seed B (Expected: 202 Accepted)
+POST {{baseUrl}}/api/jobs
+X-Actor-Id: {{mutOwnerB}}
+X-Tenant-Id: {{mutTenantA}}
+X-Permissions: {{mutPermEnqueue}}
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "mutation_owner_b",
+    "email": "mutation_owner_b@example.com"
+  }
+}
+
+@mutOwnerBJobId = {{mut_create_owner_b.response.body.$.id}}
+
+# @name mut_create_owner_c
+### Seed C (Expected: 202 Accepted)
+POST {{baseUrl}}/api/jobs
+X-Actor-Id: {{mutOwnerC}}
+X-Tenant-Id: {{mutTenantB}}
+X-Permissions: {{mutPermEnqueue}}
+Content-Type: application/json
+
+{
+  "type": "send-welcome-email",
+  "payload": {
+    "userId": "mutation_owner_c",
+    "email": "mutation_owner_c@example.com"
+  }
+}
+
+@mutOwnerCJobId = {{mut_create_owner_c.response.body.$.id}}
+
+### UI Scenario 1: Owner can read own job but cannot acknowledge (Expected: blocked by action-layer auth)
+### Actor config:
+###   ActorId=owner-alpha, TenantId=tenant-alpha, Permissions=[jobs.email.read]
+### Action:
+###   Open "/" and click Acknowledge on job {{mutOwnerAJobId}}
+### Expected:
+###   Job row is visible (read works)
+###   Status message: "Actor is not authorized to acknowledge jobs."
+###   AcknowledgedBy remains unchanged
+
+### UI Scenario 2: Peer owner cannot acknowledge (Expected: blocked)
+### Actor config:
+###   ActorId=owner-beta, TenantId=tenant-alpha, Permissions=[jobs.email.read]
+### Action:
+###   Open "/" and click Acknowledge on any visible job
+### Expected:
+###   Status message: "Actor is not authorized to acknowledge jobs."
+###   AcknowledgedBy should remain unchanged
+
+### UI Scenario 3: Tenant manager can acknowledge any job in same tenant (Expected: success)
+### Actor config:
+###   ActorId=manager-alpha, TenantId=tenant-alpha, Permissions=[jobs.email.read,jobs.email.manage]
+### Action:
+###   Open "/" and click Acknowledge on job {{mutOwnerBJobId}}
+### Expected:
+###   Status message: "Acknowledged job ..."
+###   Row shows Acknowledged by manager-alpha
+
+### UI Scenario 4: Execute-only actor cannot acknowledge (Expected: blocked by action-layer auth)
+### Actor config:
+###   ActorId=worker-exec, TenantId=tenant-alpha, Permissions=[jobs.execute]
+### Action:
+###   Open "/" and click Acknowledge on any tenant-alpha job
+### Expected:
+###   Status message: "Actor is not authorized to acknowledge jobs."
+
+### UI Scenario 5: Tenant manager cannot cross tenant by default (Expected: blocked)
+### Actor config:
+###   ActorId=manager-alpha, TenantId=tenant-alpha, Permissions=[jobs.email.read,jobs.email.manage]
+### Action:
+###   Open "/" and try to acknowledge job {{mutOwnerCJobId}} from tenant-beta
+### Expected:
+###   The job is not listed OR acknowledge attempt fails with "outside your scope"
+
+### Verify Owner A job current state (run as manager in tenant-alpha, expected 200)
+GET {{baseUrl}}/api/jobs/{{mutOwnerAJobId}}
+X-Actor-Id: {{mutManagerA}}
+X-Tenant-Id: {{mutTenantA}}
+X-Permissions: {{mutPermReadManage}}
+
+### Verify Owner B job current state (run as manager in tenant-alpha, expected 200)
+GET {{baseUrl}}/api/jobs/{{mutOwnerBJobId}}
+X-Actor-Id: {{mutManagerA}}
+X-Tenant-Id: {{mutTenantA}}
+X-Permissions: {{mutPermReadManage}}
+
+### Verify cross-tenant job visibility from tenant-alpha manager (expected 404)
+GET {{baseUrl}}/api/jobs/{{mutOwnerCJobId}}
+X-Actor-Id: {{mutManagerA}}
+X-Tenant-Id: {{mutTenantA}}
+X-Permissions: {{mutPermReadManage}}

@@ -28,4 +28,9 @@ public interface IJobStore
         Guid expectedCurrentStateChangeId,
         string reason,
         DateTimeOffset scheduledAt);
+
+    bool Acknowledge(
+        Guid id,
+        string acknowledgedBy,
+        DateTimeOffset acknowledgedAt);
 }

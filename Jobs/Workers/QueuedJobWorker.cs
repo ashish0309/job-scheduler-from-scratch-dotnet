@@ -11,12 +11,14 @@ public sealed class QueuedJobWorker : IJobWorker
     private readonly TimeSpan _simulatedWorkDuration;
     private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _leaseRenewalInterval;
+    private readonly JobActor _workerActor;
 
     public QueuedJobWorker(
         IJobActionDispatcher actions,
         IJobDispatcher dispatcher,
         ILogger<QueuedJobWorker> logger,
         IOptions<JobWorkerOptions> options,
+        IOptions<WorkerActorOptions> workerActorOptions,
         IDataAccessScopeProvider dataAccessScopeProvider)
         : this(
             actions,
@@ -24,7 +26,8 @@ public sealed class QueuedJobWorker : IJobWorker
             logger,
             options.Value.ValidSimulatedWorkDuration,
             options.Value.ValidLeaseDuration,
-            dataAccessScopeProvider)
+            dataAccessScopeProvider,
+            workerActorOptions.Value.ToActor())
     {
     }
 
@@ -38,6 +41,7 @@ public sealed class QueuedJobWorker : IJobWorker
             dispatcher,
             logger,
             options,
+            Microsoft.Extensions.Options.Options.Create(new WorkerActorOptions()),
             new FixedDataAccessScopeProvider(DataAccessScope.AllTenants()))
     {
     }
@@ -63,7 +67,8 @@ public sealed class QueuedJobWorker : IJobWorker
             logger,
             simulatedWorkDuration,
             leaseDuration,
-            new FixedDataAccessScopeProvider(DataAccessScope.AllTenants()))
+            new FixedDataAccessScopeProvider(DataAccessScope.AllTenants()),
+            new WorkerActorOptions().ToActor())
     {
     }
 
@@ -73,7 +78,8 @@ public sealed class QueuedJobWorker : IJobWorker
         ILogger<QueuedJobWorker> logger,
         TimeSpan simulatedWorkDuration,
         TimeSpan leaseDuration,
-        IDataAccessScopeProvider dataAccessScopeProvider)
+        IDataAccessScopeProvider dataAccessScopeProvider,
+        JobActor? workerActor = null)
     {
         _actions = actions;
         _dispatcher = dispatcher;
@@ -82,10 +88,13 @@ public sealed class QueuedJobWorker : IJobWorker
         _simulatedWorkDuration = simulatedWorkDuration;
         _leaseDuration = leaseDuration;
         _leaseRenewalInterval = LeaseRenewalIntervalFor(leaseDuration);
+        _workerActor = workerActor ?? new WorkerActorOptions().ToActor();
     }
 
     public async Task<bool> ProcessNextJobAsync(string workerId, CancellationToken cancellationToken)
     {
+        using var actorScope = _dataAccessScopeProvider.BeginActorScope(_workerActor);
+
         var now = DateTimeOffset.UtcNow;
         var claimResult = await _actions.DispatchAsync(
             new ClaimNextDueJobActionRequest(

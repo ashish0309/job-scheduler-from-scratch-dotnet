@@ -3,13 +3,13 @@ namespace JobSchedulerPrototype.Jobs;
 public sealed class PermissionJobAuthorizationRule : IJobAuthorizationRule
 {
     private readonly string _permission;
-    private readonly string _errorMessage;
 
-    public PermissionJobAuthorizationRule(string permission, string errorMessage)
+    public PermissionJobAuthorizationRule(string permission, string _)
     {
         _permission = permission;
-        _errorMessage = errorMessage;
     }
+
+    public JobAuthorizationRuleKind Kind => JobAuthorizationRuleKind.Grant;
 
     public ValueTask<JobAuthorizationResult> EvaluateAsync(
         JobActor actor,
@@ -18,6 +18,6 @@ public sealed class PermissionJobAuthorizationRule : IJobAuthorizationRule
         return ValueTask.FromResult(
             actor.HasPermission(_permission)
                 ? JobAuthorizationResult.Allow()
-                : JobAuthorizationResult.Deny(_errorMessage));
+                : JobAuthorizationResult.Skip());
     }
 }

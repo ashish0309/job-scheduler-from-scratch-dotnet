@@ -28,7 +28,7 @@ public sealed class ListJobsAction : JobAuthorizedAction<ListJobsActionRequest, 
         ListJobsActionRequest request,
         JobActor actor)
     {
-        return actor.Permissions.Contains(JobPermissions.GlobalRead)
+        return actor.HasPermission(JobPermissions.GlobalRead)
             ? DataAccessScope.AllTenants()
             : DataAccessScope.Tenant(actor.TenantId);
     }

@@ -21,6 +21,8 @@ builder.Services.AddSingleton<IJobDefinition, SendWelcomeEmailJobDefinition>();
 builder.Services.AddSingleton<IJobDefinitionRegistry, JobDefinitionRegistry>();
 builder.Services.Configure<DevelopmentActorOptions>(
     builder.Configuration.GetSection(DevelopmentActorOptions.SectionName));
+builder.Services.Configure<WorkerActorOptions>(
+    builder.Configuration.GetSection(WorkerActorOptions.SectionName));
 builder.Services.AddSingleton<IJobActorProvider, DevelopmentHeaderJobActorProvider>();
 builder.Services.AddSingleton<IJobAuthorizationRuleEvaluator, JobAuthorizationRuleEvaluator>();
 builder.Services.AddJobActions();
@@ -36,12 +38,6 @@ builder.Services.AddSingleton<IJobWorker, QueuedJobWorker>();
 builder.Services.AddHostedService<JobWorkerPoolHostedService>();
 
 var app = builder.Build();
-
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<JobSchedulerDbContext>();
-    db.Database.Migrate();
-}
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

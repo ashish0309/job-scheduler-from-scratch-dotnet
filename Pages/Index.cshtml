@@ -32,6 +32,13 @@
     </div>
 </section>
 
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-@Model.StatusLevel" role="status">
+        @Model.StatusMessage
+    </div>
+}
+
 @if (Model.Jobs.Count == 0)
 {
     <section class="empty-state">
@@ -53,7 +60,9 @@ else
                     <th scope="col">Scheduled</th>
                     <th scope="col">Enqueued</th>
                     <th scope="col">Finished</th>
+                    <th scope="col">Acknowledged</th>
                     <th scope="col">Failure</th>
+                    <th scope="col">Action</th>
                     <th scope="col">API</th>
                 </tr>
             </thead>
@@ -74,6 +83,7 @@ else
                         <td>@FormatTimestamp(job.ScheduledAt)</td>
                         <td>@job.EnqueuedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")</td>
                         <td>@FormatTimestamp(job.CompletedAt ?? job.FailedAt)</td>
+                        <td>@FormatAcknowledgement(job.AcknowledgedBy, job.AcknowledgedAt)</td>
                         <td>
                             @if (job.Status == JobStatus.Failed)
                             {
@@ -83,6 +93,19 @@ else
                             {
                                 <span class="text-muted">None</span>
                             }
+                        </td>
+                        <td>
+                            <form method="post" asp-page-handler="Acknowledge">
+                                <input type="hidden" name="id" value="@job.Id" />
+                                @if (job.AcknowledgedAt is null)
+                                {
+                                    <button type="submit" class="btn btn-sm btn-outline-primary">Acknowledge</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled>Acknowledged</button>
+                                }
+                            </form>
                         </td>
                         <td><a href="@job.StatusUrl">@job.StatusUrl</a></td>
                     </tr>
@@ -96,6 +119,19 @@ else
     private static string FormatTimestamp(DateTimeOffset? value)
     {
         return value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "Not yet";
+    }
+
+    private static string FormatAcknowledgement(string? acknowledgedBy, DateTimeOffset? acknowledgedAt)
+    {
+        if (acknowledgedAt is null)
+        {
+            return "Not acknowledged";
+        }
+
+        var acknowledgedAtText = acknowledgedAt.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz");
+        return string.IsNullOrWhiteSpace(acknowledgedBy)
+            ? acknowledgedAtText
+            : $"{acknowledgedBy} at {acknowledgedAtText}";
     }
 
 }

@@ -3,6 +3,7 @@ using JobSchedulerPrototype.Jobs;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -85,6 +86,8 @@ public sealed class AppStartupTests
                 services.GetRequiredService<IJobActionHandler<RenewJobLeaseActionRequest, RenewJobLeaseActionResult>>());
             Assert.IsType<CompleteJobExecutionAction>(
                 services.GetRequiredService<IJobActionHandler<CompleteJobExecutionActionRequest, CompleteJobExecutionActionResult>>());
+            Assert.IsType<AcknowledgeJobAction>(
+                services.GetRequiredService<IJobActionHandler<AcknowledgeJobActionRequest, AcknowledgeJobActionResult>>());
             Assert.Contains(
                 services.GetServices<IJobEndpointDefinition>(),
                 definition => definition is EnqueueJobEndpointDefinition);
@@ -98,6 +101,7 @@ public sealed class AppStartupTests
             Assert.IsType<DataAccessPolicyFilterBuilder>(services.GetRequiredService<IDataAccessPolicyFilterBuilder>());
             Assert.IsType<JobDataAccessPolicy>(services.GetRequiredService<IDataAccessPolicy>());
             var db = services.GetRequiredService<JobSchedulerDbContext>();
+            db.Database.Migrate();
             Assert.True(db.Database.CanConnect());
             Assert.Empty(db.Jobs);
         }
